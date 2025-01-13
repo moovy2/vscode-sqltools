@@ -8,6 +8,7 @@ import { SettingsScreenState } from './ui/screens/Settings/interfaces';
 import { driverPluginExtension, getInstalledDrivers, getDriverSchemas } from '../extension-util';
 
 export default class SettingsWebview extends WebviewProvider {
+  protected cssVariables: { [name: string]: string; };
   protected id: string = 'Settings';
   protected title: string = `${DISPLAY_NAME} Settings`;
 
@@ -58,21 +59,20 @@ export default class SettingsWebview extends WebviewProvider {
   }
 
   private testConnection = async ({ connInfo }) => {
-    connInfo = await this.parseBeforeSave({ connInfo });
-
-    return commands.executeCommand(`${EXT_NAMESPACE}.testConnection`, connInfo)
-    .then((res: any) => {
+    try {
+      connInfo = await this.parseBeforeSave({ connInfo });
+      const res = await commands.executeCommand<any>(`${EXT_NAMESPACE}.testConnection`, connInfo);
       if (res && res.notification) {
-        const externalMessage = `You need to fix some issues in your machine first. Check the notifications on bottom-right before moving forward.`
+        const externalMessage = `You need to fix some connection issues. Check notifications at the right-hand end of status bar.`
         return this.sendMessage(UIAction.RESPONSE_TEST_CONNECTION_WARNING, { externalMessage });
       }
-      this.sendMessage(UIAction.RESPONSE_TEST_CONNECTION_SUCCESS, { connInfo });
-    }, (payload = {}) => {
-      payload = {
-        externalMessage: (payload.message || payload || '').toString(),
+      this.sendMessage(UIAction.RESPONSE_TEST_CONNECTION_SUCCESS, { connInfo });     
+    } catch (error) {
+      const payload = {
+        externalMessage: (error.message || error || '').toString(),
       }
       this.sendMessage(UIAction.RESPONSE_TEST_CONNECTION_ERROR, payload);
-    });
+    }
   }
 
   private parseBeforeSave = async ({ connInfo }) => {
@@ -80,11 +80,18 @@ export default class SettingsWebview extends WebviewProvider {
     if (pluginExt && pluginExt.parseBeforeSaveConnection) {
       connInfo = await pluginExt.parseBeforeSaveConnection({ connInfo });
     }
-    ['id', 'isConnected', 'isActive'].forEach(p => delete connInfo[p]);
+    ['id', 'isConnected', 'isActive', 'isPasswordResolved'].forEach(p => delete connInfo[p]);
     return connInfo;
   }
 
   private parseBeforeEdit = async ({ connInfo }) => {
+
+    // Ensure driver doesn't inadvertently treat authprovider-sourced password as having come from settings
+    if (connInfo.isPasswordResolved) {
+      delete connInfo.password;
+    }
+    delete connInfo.isPasswordResolved;
+
     const pluginExt = await driverPluginExtension(connInfo.driver);
     if (pluginExt && pluginExt.parseBeforeEditConnection) {
       connInfo = await pluginExt.parseBeforeEditConnection({ connInfo });

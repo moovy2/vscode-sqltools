@@ -504,6 +504,23 @@ where id = $1`);
         id INTEGER PRIMARY KEY,
         name VARCHAR(200) UNIQUE,
       );
+
+      CREATE TABLE bar (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR(200) UNIQUE,
+      );
+
+      CREATE TABLE baz (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR(200) UNIQUE,
+      );
+    `;
+    expect(format(input, { linesBetweenQueries: 'preserve' })).toEqual(input);
+    input = dedent`
+      CREATE TABLE foo (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR(200) UNIQUE,
+      );
       CREATE TABLE bar (
         id INTEGER PRIMARY KEY,
         name VARCHAR(200) UNIQUE,
@@ -641,5 +658,26 @@ where id = $1`);
       TRIGGER,
       UPDATE ON * TO 'user' @'%';
     `))
+  });
+
+  it("formats postgres specific c-style escape sequences", function() {
+    expect(format("E'\\n'")).toBe("E'\\n'");
+    expect(format("E'\\d+'")).toBe("E'\\d+'");
+    expect(format("E'\n'")).toBe("E'\n'");
+    expect(format("E'foo\\'bar'")).toBe("E'foo\\'bar'");
+
+    // also support lower-case e
+    expect(format("e'\n'")).toBe("e'\n'");
+    // multiline escape sequence
+    expect(format(`E'\n
+    \\d+
+    '`)).toBe(`E'\n
+    \\d+
+    '`);
+
+    expect(format("e'\n' ='abc'")).toBe("e'\n' = 'abc'");
+
+    // only E or e should be treated as special escape sequence
+    expect(format("D'\n'")).toBe("D '\n'");
   });
 });

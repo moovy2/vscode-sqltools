@@ -50,8 +50,10 @@ class ResultsWebview extends WebviewProvider<ResultsScreenState> {
 
   show() {
     if (!this.isOpen) {
-      this.whereToShow = null;
+      this.whereToShow = undefined;
       switch (Config.results.location) {
+        case 'none': 
+          break;
         case 'active': // fallback older version
         case 'current':
           this.whereToShow = vscode.ViewColumn.Active;
@@ -95,19 +97,32 @@ class ResultsWebview extends WebviewProvider<ResultsScreenState> {
     this.title = `${DISPLAY_NAME} Console`;
     try {
       const prefix = getNameFromId(payload[0].connId);
-      let suffix = 'query results';
+      let suffix: string;
       if (payload && payload.length > 0) {
+        payload.forEach((result, index) => {
+          if (!result.label) {
+            const matches = [...result.query.matchAll(/^--\s*@label\s*(.+)$/gm)];
+            if (index > 0 || payload.length === 1 || !matches[1]) {
+              result.label = matches[0] ? matches[0][1].trim() : undefined;
+            } else {
+              // If two @label comments precede the first statement of a multi-statement block, note the first for use as the top label
+              // and use the second as the statement's label
+              suffix = matches[0][1].trim() || undefined;
+              result.label = matches[1][1].trim() || undefined;
+            }
+          }
+        });
         if (payload.length === 1) {
           let truncatedQuery = payload[0].query.length > 16 ? `${payload[0].query.substring(0, 16)}...` : payload[0].query;
           suffix = payload[0].label ? payload[0].label : truncatedQuery.replace(/(\r?\n\s*)/gim, ' ');
         } else {
-          suffix = 'multiple query results';
+          suffix = suffix || 'multiple query results';
         }
       }
       this.title = `${prefix}: ${suffix}`;
     } catch (error) { }
     this.updatePanelName();
-    this.sendMessage(UIAction.RESPONSE_RESULTS, { resultTabs: payload, hasError: payload.some(p => !!p.error) });
+    this.sendMessage(UIAction.RESPONSE_RESULTS, { resultTabs: payload, showConsole: Config.results.showConsoleOnError  && payload.some(p => !!p.error) });
   }
 
   whereToShow = vscode.ViewColumn.Active;

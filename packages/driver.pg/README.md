@@ -1,8 +1,39 @@
-# SQLTools PostgreSQL/Cockroach/Redshift Driver
+# SQLTools PostgreSQL/Cockroach Driver
 
 This package is part of [vscode-sqltools](https://vscode-sqltools.mteixeira.dev/?umd_source=repository&utm_medium=readme&utm_campaign=pg) extension.
 
 ## Changelog
+
+### 0.5.4
+
+- Use NodeJS 16.
+
+### 0.5.3
+
+- Fix problem connecting to AWS RDS postgresql. [#1265](https://github.com/mtxr/vscode-sqltools/pull/1265) - thanks [@jqknono](https://github.com/jqknono)
+
+### 0.5.2
+
+- List schemas in alphabetical order. [#1176](https://github.com/mtxr/vscode-sqltools/issues/1176) - thanks [@bombillazo](https://github.com/bombillazo)
+
+### 0.5.1
+
+- Use 0.27 extension's new ability to store connection passwords securely. [#1084](https://github.com/mtxr/vscode-sqltools/pull/1084)
+- Avoid storing redundant properties on connections that use `connectString`. [#1087](https://github.com/mtxr/vscode-sqltools/issues/1087)
+
+### 0.5.0
+
+- Sync with 0.27 release of main extension.
+
+### 0.4.0
+
+- No longer promote as an official driver for Redshift. [#991](https://github.com/mtxr/vscode-sqltools/pull/991)
+- Update Cockroach icons.
+
+### 0.3.0
+
+- Add Cockroach as an alias. Thanks [@ultram4rine](https://github.com/ultram4rine).
+- Sync with 0.24 release of main extension.
 
 ### 0.2.0
 

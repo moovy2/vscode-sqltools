@@ -1,4 +1,4 @@
-import { commands, env as VSCodeEnv, ExtensionContext, version as VSCodeVersion, window, EventEmitter, OutputChannel } from 'vscode';
+import { commands, ExtensionContext, window, EventEmitter, OutputChannel } from 'vscode';
 import { EXT_NAMESPACE, VERSION, AUTHOR, DISPLAY_NAME } from '@sqltools/util/constants';
 import { IExtension, IExtensionPlugin, ICommandEvent, ICommandSuccessEvent, CommandEventHandler } from '@sqltools/types';
 import { migrateFilesToNewPaths } from '@sqltools/util/path';
@@ -11,17 +11,18 @@ import https from 'https';
 import { default as logger, createLogger } from '@sqltools/log/src';
 import PluginResourcesMap from '@sqltools/util/plugin-resources';
 import SQLToolsLanguageClient from './language-client';
-import Timer from '@sqltools/util/telemetry/timer';
+import Timer from '@sqltools/util/timer';
 import Utils from './api/utils';
 
 const log = createLogger();
 
 // plugins
 import ConnectionManagerPlugin from '@sqltools/plugins/connection-manager/extension';
+import ObjectDropProviderPlugin from '@sqltools/plugins/objectdrop-provider/extension';
 import HistoryManagerPlugin from '@sqltools/plugins/history-manager/extension';
 import BookmarksManagerPlugin from '@sqltools/plugins/bookmarks-manager/extension';
 import FormatterPlugin from '@sqltools/plugins/formatter/extension';
-import telemetry from '@sqltools/util/telemetry';
+import AuthenticationProviderPlugin from '@sqltools/plugins/authentication-provider/extension';
 
 export class SQLToolsExtension implements IExtension {
   private pluginsQueue: IExtensionPlugin<this>[] = [];
@@ -38,18 +39,12 @@ export class SQLToolsExtension implements IExtension {
     log.info('SQLTools is starting');
     const { installedExtPlugins = {} } = Utils.getlastRunInfo();
     Context.globalState.update('extPlugins', installedExtPlugins || {});
-    telemetry.updateOpts({
-      extraInfo: {
-        sessId: VSCodeEnv.sessionId,
-        uniqId: VSCodeEnv.machineId,
-        version: VSCodeVersion,
-      },
-    });
     log.info('initializing language client...');
     this.client = new SQLToolsLanguageClient();
     this.onWillRunCommandEmitter = new EventEmitter();
     this.onDidRunCommandSuccessfullyEmitter = new EventEmitter();
 
+    await this.client.init()
     Context.subscriptions.push(
       this.client.start(),
       this.onWillRunCommandEmitter.event(this.onWillRunCommandHandler),
@@ -67,7 +62,7 @@ export class SQLToolsExtension implements IExtension {
     log.info('loading plugins...');
     this.loadPlugins();
     activationTimer.end();
-    telemetry.registerTime('activation', activationTimer);
+
     this.displayReleaseNotesMessage();
     log.info('SQLTools activation completed. %d ms', activationTimer.elapsed());
     return {
@@ -132,9 +127,9 @@ export class SQLToolsExtension implements IExtension {
       if (body) {
         body = encodeURIComponent(
           body
-          .replace(/---([^\-]+---\n\n)/gim, '')
-          .replace(/(- OS).+/gi, `$1: ${process.platform}, ${process.arch}`)
-          .replace(/(- Version).+/gi, `$1: v${VERSION}`));
+            .replace(/---([^\-]+---\n\n)/gim, '')
+            .replace(/(- OS).+/gi, `$1: ${process.platform}, ${process.arch}`)
+            .replace(/(- Version).+/gi, `$1: v${VERSION}`));
       }
 
       if (!template && !body) {
@@ -174,9 +169,9 @@ export class SQLToolsExtension implements IExtension {
       const supportProject = 'Support This Project';
       const releaseNotes = 'Release Notes';
       const message = `${DISPLAY_NAME} updated! Check out the release notes for more information.`;
-      const options = [ moreInfo, supportProject, releaseNotes ];
+      const options = [moreInfo, supportProject, releaseNotes];
       const res: string = await window.showInformationMessage(message, ...options);
-      telemetry.registerMessage('info', message, res);
+
       switch (res) {
         case moreInfo:
           openExternal('https://vscode-sqltools.mteixeira.dev/#donate-and-support?umd_source=vscode&utm_medium=notification&utm_campaign=donate');
@@ -312,6 +307,8 @@ export function activate(ctx: ExtensionContext) {
       ConnectionManagerPlugin,
       new HistoryManagerPlugin,
       new BookmarksManagerPlugin,
+      new AuthenticationProviderPlugin,
+      new ObjectDropProviderPlugin,
     ])
     return instance.activate();
 

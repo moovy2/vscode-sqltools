@@ -17,8 +17,8 @@ export default class BookmarksManagerPlugin implements IExtensionPlugin {
       agg.concat(
         Object.values(group.items).map<QuickPickItem>(item => ({
           label: item.name,
-          detail: item.description,
-          description: group.label,
+          detail: typeof item.description === 'string' ? item.description : undefined,
+          description: typeof group.label === 'string' ? group.label : group.label?.label,
           item,
         }))
       ), []);

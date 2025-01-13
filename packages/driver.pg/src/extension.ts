@@ -1,8 +1,9 @@
 import { IExtension, IExtensionPlugin, IDriverExtensionApi } from '@sqltools/types';
-import { ExtensionContext, extensions } from 'vscode';
+import { ExtensionContext, extensions, authentication } from 'vscode';
 import { DRIVER_ALIASES } from './constants';
 const { publisher, name } = require('../package.json');
-const driverName = 'PostgreSQL/Redshift';
+const driverName = 'PostgreSQL/Cockroach';
+const AUTHENTICATION_PROVIDER = 'sqltools-driver-credentials';
 export async function activate(extContext: ExtensionContext): Promise<IDriverExtensionApi> {
   const sqltools = extensions.getExtension<IExtension>('mtxr.sqltools');
   if (!sqltools) {
@@ -25,10 +26,9 @@ export async function activate(extContext: ExtensionContext): Promise<IDriverExt
         default: extContext.asAbsolutePath('icons/pg/default.png'),
         inactive: extContext.asAbsolutePath('icons/pg/inactive.png'),
       });
-      // redshift
+      // redshift (deprecated as an alias in favour of the standalone one, so doesn't register a default icon so as not to appear in Connection Assistant)
       extension.resourcesMap().set(`driver/${DRIVER_ALIASES[1].value}/icons`, {
         active: extContext.asAbsolutePath('icons/redshift/active.png'),
-        default: extContext.asAbsolutePath('icons/redshift/default.png'),
         inactive: extContext.asAbsolutePath('icons/redshift/inactive.png'),
       });
       // cockroach
@@ -52,15 +52,24 @@ export async function activate(extContext: ExtensionContext): Promise<IDriverExt
       const propsToRemove = ['connectionMethod', 'id', 'usePassword'];
       if (connInfo.usePassword) {
         if (connInfo.usePassword.toString().toLowerCase().includes('ask')) {
+          connInfo.askForPassword = true;
           propsToRemove.push('password');
         } else if (connInfo.usePassword.toString().toLowerCase().includes('empty')) {
           connInfo.password = '';
           propsToRemove.push('askForPassword');
-        } else if(connInfo.usePassword.toString().toLowerCase().includes('save')) {
+        } else if (connInfo.usePassword.toString().toLowerCase().includes('save')) {
+          propsToRemove.push('askForPassword');
+        } else if (connInfo.usePassword.toString().toLowerCase().includes('secure')) {
+          propsToRemove.push('password');
           propsToRemove.push('askForPassword');
         }
       }
+      if (connInfo.connectString) {
+        propsToRemove.push('port');
+        propsToRemove.push('askForPassword');
+      }
       propsToRemove.forEach(p => delete connInfo[p]);
+
       connInfo.pgOptions = connInfo.pgOptions || {};
       if (connInfo.pgOptions.enableSsl === 'Enabled') {
         if (typeof connInfo.pgOptions.ssl === 'object' && Object.keys(connInfo.pgOptions.ssl).length === 0) {
@@ -92,7 +101,9 @@ export async function activate(extContext: ExtensionContext): Promise<IDriverExt
         delete formData.password;
       } else if (typeof connInfo.password === 'string') {
         delete formData.askForPassword;
-        formData.usePassword = connInfo.password ? 'Save password' : 'Use empty password';
+        formData.usePassword = connInfo.password ? 'Save as plaintext in settings' : 'Use empty password';
+      } else {
+        formData.usePassword = 'SQLTools Driver Credentials';
       }
 
       formData.pgOptions = formData.pgOptions || {};
@@ -106,6 +117,31 @@ export async function activate(extContext: ExtensionContext): Promise<IDriverExt
       }
 
       return formData;
+    },
+    resolveConnection: async ({ connInfo }) => {
+      /**
+       * This hook is called after a connection definition has been fetched
+       * from settings and is about to be used to connect.
+       */
+      if (connInfo.password === undefined && !connInfo.askForPassword && !connInfo.connectString) {
+        const scopes = [connInfo.name, (connInfo.username || "")];
+        let session = await authentication.getSession(
+          AUTHENTICATION_PROVIDER,
+          scopes,
+          { silent: true }
+        );
+        if (!session) {
+          session = await authentication.getSession(
+            AUTHENTICATION_PROVIDER,
+            scopes,
+            { createIfNone: true }
+          );
+        }
+        if (session) {
+          connInfo.password = session.accessToken;
+        }
+      }
+      return connInfo;
     },
     driverAliases: DRIVER_ALIASES,
   }

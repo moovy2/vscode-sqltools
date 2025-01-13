@@ -9,20 +9,19 @@ import generateId from '@sqltools/util/internal-id';
 import { default as logger, createLogger } from '@sqltools/log/src';
 import { getDataPath, SESSION_FILES_DIRNAME } from '@sqltools/util/path';
 import { extractConnName, getQueryParameters } from '@sqltools/util/query';
-import telemetry from '@sqltools/util/telemetry';
 import { isEmpty } from '@sqltools/util/validation';
 import Context from '@sqltools/vscode/context';
-import { getIconPaths } from '@sqltools/vscode/icons';
 import { getOrCreateEditor, getSelectedText, readInput } from '@sqltools/vscode/utils';
 import { getEditorQueryDetails } from '@sqltools/vscode/utils/query';
 import { quickPick, quickPickSearch } from '@sqltools/vscode/utils/quickPick';
 import path from 'path';
+import { promises as fs } from 'fs';
 import { file } from 'tempy';
-import { CancellationTokenSource, commands, ConfigurationTarget, env as vscodeEnv, Progress, ProgressLocation, QuickPickItem, TextDocument, TextEditor, Uri, window, workspace } from 'vscode';
+import { CancellationTokenSource, commands, ConfigurationTarget, env as vscodeEnv, Progress, ProgressLocation, QuickPickItem, TextDocument, TextEditor, ThemeIcon, Uri, window, workspace } from 'vscode';
 import CodeLensPlugin from '../codelens/extension';
-import { ConnectRequest, DisconnectRequest, ForceListRefresh, GetChildrenForTreeItemRequest, GetConnectionPasswordRequest, GetConnectionsRequest, GetInsertQueryRequest, ProgressNotificationComplete, ProgressNotificationCompleteParams, ProgressNotificationStart, ProgressNotificationStartParams, RunCommandRequest, SaveResultsRequest, SearchConnectionItemsRequest, TestConnectionRequest } from './contracts';
+import { ConnectRequest, DisconnectRequest, ForceListRefresh, GetChildrenForTreeItemRequest, GetConnectionPasswordRequest, GetConnectionsRequest, GetInsertQueryRequest, ProgressNotificationComplete, ProgressNotificationCompleteParams, ProgressNotificationStart, ProgressNotificationStartParams, ReleaseResultsRequest, RunCommandRequest, GetResultsRequest, SearchConnectionItemsRequest, TestConnectionRequest } from './contracts';
 import DependencyManager from './dependency-manager/extension';
-import { getExtension } from './extension-util';
+import { getExtension, resolveConnection } from './extension-util';
 import statusBar from './status-bar';
 import { removeAttachedConnection, attachConnection, getAttachedConnection } from './attached-files';
 
@@ -51,6 +50,7 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
 
   private ext_testConnection = async (c: IConnection) => {
     let password = null;
+    c = await resolveConnection(c);
 
     if (c.askForPassword) password = await this._askForPassword(c);
     if (c.askForPassword && password === null) return;
@@ -90,7 +90,8 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
   private ext_showRecords = async (node?: SidebarItem<NSDatabase.ITable> | NSDatabase.ITable, opt: IQueryOptions & { page?: number, pageSize?: number } = {}) => {
     try {
       const table = await this._getTable(node);
-      const view = await this._openResultsWebview(opt.requestId);
+      const conn = await this.explorer.getActive()
+      const view = await this._openResultsWebview(conn && conn.id, opt.requestId);
       const payload = await this._runConnectionCommandWithArgs('showRecords', table, { ...opt, requestId: view.requestId });
       this.updateViewResults(view, payload);
     } catch (e) {
@@ -101,7 +102,8 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
   private ext_describeTable = async (node?: SidebarItem<NSDatabase.ITable> | NSDatabase.ITable) => {
     try {
       const table = await this._getTable(node);
-      const view = await this._openResultsWebview();
+      const conn = await this.explorer.getActive()
+      const view = await this._openResultsWebview(conn && conn.id, undefined);
       const payload = await this._runConnectionCommandWithArgs('describeTable', table, { requestId: view.requestId });
       this.updateViewResults(view, payload);
     } catch (e) {
@@ -121,7 +123,6 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
 
     try {
       await this.client.sendRequest(DisconnectRequest, { conn })
-      telemetry.registerMessage('info', 'Connection closed!');
       await this.explorer.refresh();
     } catch (e) {
       return this.errorHandler('Error closing connection', e);
@@ -167,6 +168,9 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
 
     if (Config.sessionFilesFolder && Config.sessionFilesFolder != '') {
       baseFolder = Uri.file(Config.sessionFilesFolder);
+      if(!path.isAbsolute(Config.sessionFilesFolder) && workspace.workspaceFolders && workspace.workspaceFolders.length){
+        baseFolder = Uri.joinPath(workspace.workspaceFolders[0].uri, Config.sessionFilesFolder)
+      }
     }
 
     const sessionFilePath = path.resolve(baseFolder.fsPath, getSessionBasename(conn.name));
@@ -210,32 +214,42 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
     }
   }
 
-  private replaceParams = async (query: string) => {
+  private replaceParams = async (query: string, conn: IConnection) => {
     if (!Config['queryParams.enableReplace']) return query;
 
-    const params = getQueryParameters(query, Config['queryParams.regex']);
+    const regex = Config['queryParams.regex']
+    const params = getQueryParameters(query, regex);
     if (params.length > 0) {
-      await new Promise<void>((resolve, reject) => {
-        const ib = window.createInputBox();
-        ib.step = 1;
-        ib.totalSteps = params.length;
-        ib.ignoreFocusOut = true;
-        ib.title = `Value for '${params[ib.step - 1].param}' in '${params[ib.step - 1].string}'`;
-        ib.prompt = 'Remember to escape values if needed.'
-        ib.onDidAccept(() => {
-          const r = new RegExp(params[ib.step - 1].param.replace(/([\$\[\]])/g, '\\$1'), 'g');
-          query = query.replace(r, ib.value);
-          ib.step++;
-          if (ib.step > ib.totalSteps) {
-            ib.hide();
-            return resolve();
-          }
-          ib.value = '';
-          ib.title = `Value for '${params[ib.step - 1].param}' in '${params[ib.step - 1].string}'`;
+      const connVariables = conn.variables || {}
+      const connParams = params.filter(p => p.varName && Object.keys(connVariables).includes(p.varName))
+      for (const connParam of connParams) {
+        const r = new RegExp(connParam.param.replace(/([\$\[\]])/g, '\\$1'), 'g');
+        query = query.replace(r, connVariables[connParam.varName]);
+      }
+      const promptParams = params.filter(p => connParams.indexOf(p) === -1)
+      if (promptParams.length > 0) {
+        await new Promise<void>((resolve, reject) => {
+          const ib = window.createInputBox();
+          ib.step = 1;
+          ib.totalSteps = promptParams.length;
+          ib.ignoreFocusOut = true;
+          ib.title = `Value for '${promptParams[ib.step - 1].param}' in '${promptParams[ib.step - 1].string}'`;
+          ib.prompt = 'Remember to escape values if needed.'
+          ib.onDidAccept(() => {
+            const r = new RegExp(promptParams[ib.step - 1].param.replace(/([\$\[\]])/g, '\\$1'), 'g');
+            query = query.replace(r, ib.value);
+            ib.step++;
+            if (ib.step > ib.totalSteps) {
+              ib.hide();
+              return resolve();
+            }
+            ib.value = '';
+            ib.title = `Value for '${promptParams[ib.step - 1].param}' in '${promptParams[ib.step - 1].string}'`;
+          });
+          ib.onDidHide(() => ib.step >= ib.totalSteps && ib.value.trim() ? resolve() : reject(new Error('Didn\'t fill all params. Cancelling...')));
+          ib.show();
         });
-        ib.onDidHide(() => ib.step >= ib.totalSteps && ib.value.trim() ? resolve() : reject(new Error('Didn\'t fill all params. Cancelling...')));
-        ib.show();
-      });
+      }
     }
 
     return query;
@@ -264,8 +278,10 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
         await this._connect();
       }
 
-      query = await this.replaceParams(query);
-      const view = await this._openResultsWebview(opt.requestId);
+      const conn = await this.explorer.getActive()
+      query = await this.replaceParams(query, conn);
+      
+      const view = await this._openResultsWebview(conn && conn.id, opt.requestId);
       const payload = await this._runConnectionCommandWithArgs('query', query, { ...opt, requestId: view.requestId });
       this.updateViewResults(view, payload);
       return payload;
@@ -292,8 +308,8 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
 
   private ext_showOutputChannel = async () => logger.show();
 
-  private ext_saveResults = async (arg: (IQueryOptions & { fileType?: 'csv' | 'json' | 'prompt' }) | Uri = {}) => {
-    let fileType: string | null = null;
+  private ext_saveResults = async (arg: (IQueryOptions & { formatType?: 'csv' | 'json' | 'prompt' }) | Uri = {}) => {
+    let formatType: string | null = null;
     let opt: IQueryOptions = {};
     if (arg instanceof Uri) {
       // if clicked on editor title actions
@@ -311,38 +327,49 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
       }
     } else if (arg.requestId) {
       // used context menu inside of a view
-      const { fileType: optFileType, ...rest } = arg;
-      fileType = optFileType;
+      const { formatType: optFileType, ...rest } = arg;
+      formatType = optFileType;
       opt = rest;
     }
 
     if (!opt || !opt.requestId) throw 'Can\'t find active results view';
 
-    fileType = fileType || Config.defaultExportType;
-    if (fileType === 'prompt') {
-      fileType = await quickPick<'csv' | 'json' | undefined>([
-        { label: 'Save results as CSV', value: 'csv' },
-        { label: 'Save results as JSON', value: 'json' },
+    let showSaveDialog = true;
+    formatType = formatType || Config.defaultExportType;
+    if (formatType === 'prompt') {
+      ({ formatType, showSaveDialog } = (await quickPick<{ formatType: 'csv' | 'json'; showSaveDialog: boolean }>([
+        { label: 'Save results as CSV', value: { formatType: 'csv', showSaveDialog: true } },
+        { label: 'Save results as JSON', value: { formatType: 'json', showSaveDialog: true } },
+        { label: 'Copy results as CSV to clipboard', value: { formatType: 'csv', showSaveDialog: false } },
+        { label: 'Copy results as JSON to clipboard', value: { formatType: 'json', showSaveDialog: false } },
       ], 'value', {
         title: 'Select a file type to export',
-      });
+      }) || {}));
     }
 
-    if (!fileType || fileType === 'prompt') return;
+    if (!formatType || formatType === 'prompt') return;
 
-    const filters = fileType === 'csv' ? { 'CSV File': ['csv', 'txt'] } : { 'JSON File': ['json'] };
-    const file = await window.showSaveDialog({
-      filters,
-      saveLabel: 'Export'
-    });
-    if (!file) return;
-    const filename = file.fsPath;
-    await this.client.sendRequest(SaveResultsRequest, { ...opt, filename, fileType });
-    return commands.executeCommand('vscode.open', file);
+    if (showSaveDialog) { // When saving to file
+      const filters = formatType === 'csv' ? { 'CSV File': ['csv', 'txt'] } : { 'JSON File': ['json'] };
+      const file = await window.showSaveDialog({
+        filters,
+        saveLabel: 'Export'
+      });
+      if (!file) return;
+      const filename = file.fsPath;
+
+      const results = await this.client.sendRequest(GetResultsRequest, { ...opt, formatType });
+
+      await fs.writeFile(filename, results);
+      return commands.executeCommand('vscode.open', file);
+    } else { // When saving to clipboard
+      const results = await this.client.sendRequest(GetResultsRequest, { ...opt, formatType });
+      return vscodeEnv.clipboard.writeText(results);
+    }
   }
 
-  private ext_openResults = async (arg: (IQueryOptions & { fileType?: 'csv' | 'json' | 'prompt' }) | Uri = {}) => {
-    let fileType: string | null = null;
+  private ext_openResults = async (arg: (IQueryOptions & { formatType?: 'csv' | 'json' | 'prompt' }) | Uri = {}) => {
+    let formatType: string | null = null;
     let opt: IQueryOptions = {};
     if (arg instanceof Uri) {
       // if clicked on editor title actions
@@ -360,16 +387,16 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
       }
     } else if (arg.requestId) {
       // used context menu inside of a view
-      const { fileType: optFileType, ...rest } = arg;
-      fileType = optFileType;
+      const { formatType: optFileType, ...rest } = arg;
+      formatType = optFileType;
       opt = rest;
     }
 
     if (!opt || !opt.requestId) throw 'Can\'t find active results view';
 
-    fileType = fileType || Config.defaultOpenType;
-    if (fileType === 'prompt') {
-      fileType = await quickPick<'csv' | 'json' | undefined>([
+    formatType = formatType || Config.defaultOpenType;
+    if (formatType === 'prompt') {
+      formatType = await quickPick<'csv' | 'json' | undefined>([
         { label: 'Open results as CSV', value: 'csv' },
         { label: 'Open results as JSON', value: 'json' },
       ], 'value', {
@@ -377,15 +404,16 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
       });
     }
 
-    if (!fileType || fileType === 'prompt') return;
+    if (!formatType || formatType === 'prompt') return;
 
     const filename = file({
-      extension: fileType,
+      extension: formatType,
     });
 
     const fileUri = Uri.file(filename);
+    const results = await this.client.sendRequest(GetResultsRequest, { ...opt, formatType });
+    await fs.writeFile(filename, results);
 
-    await this.client.sendRequest(SaveResultsRequest, { ...opt, filename, fileType });
     return vscodeEnv.openExternal(fileUri);
   }
 
@@ -423,7 +451,7 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
       workspaceFolderValue = [],
       workspaceValue = [],
       globalValue = [],
-    } = workspace.getConfiguration(EXT_CONFIG_NAMESPACE).inspect('connections');
+    } = workspace.getConfiguration(EXT_CONFIG_NAMESPACE).inspect<any[]>('connections');
 
     const findIndex = (arr = []) => arr.findIndex(c => getConnectionId(c) === conn.id);
 
@@ -453,6 +481,7 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
     }
 
     const connList = this.getConnectionList(ConfigurationTarget[writeTo] || undefined);
+    this._throwIfNotUnique(connInfo, connList);
     connList.push(connInfo);
     return this.saveConnectionList(connList, ConfigurationTarget[writeTo]);
   }
@@ -465,11 +494,20 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
 
     const connList = this.getConnectionList(ConfigurationTarget[writeTo] || undefined)
       .filter(c => getConnectionId(c) !== oldId);
+    this._throwIfNotUnique(connInfo, connList);
     connList.push(connInfo);
     return this.saveConnectionList(connList, ConfigurationTarget[writeTo]);
   }
 
   // internal utils
+
+  private _throwIfNotUnique(connInfo: IConnection, connList: IConnection[]) {
+    const connId = getConnectionId(connInfo);
+    if (connList.filter((c) => getConnectionId(c) === connId).length > 0) {
+      throw new Error(`A connection definition already exists with id '${connId}'. Change name or another id element to make it unique.`);
+    }
+  }
+
   private async _getTable(node?: SidebarItem<NSDatabase.ITable> | NSDatabase.ITable): Promise<NSDatabase.ITable> {
     if (node instanceof SidebarItem && node.conn) {
       await this._setConnection(node.conn as IConnection);
@@ -489,9 +527,12 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
   }
 
 
-  private async _openResultsWebview(reUseId?: string) {
-    const requestId = reUseId || generateId();
+  private async _openResultsWebview(connId: string, reUseId: string) {
+    const requestId = reUseId || Config.results.reuseTabs === 'connection' ? connId : generateId();
     const view = this.resultsWebview.get(requestId);
+    view.onDidDispose(() => {
+      this.client.sendRequest(ReleaseResultsRequest, { connId, requestId });
+    });
     await view.show();
     return view;
   }
@@ -529,12 +570,12 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
       matchOnDescription: true,
       matchOnDetail: true,
       placeHolder: 'Pick a connection',
-      placeHolderDisabled: 'You don\'t have any connections yet.',
-      title: 'Connections',
+      placeHolderDisabled: 'You don\'t have any connections defined yet. Use the \'+\' button above to add one.',
+      title: 'SQLTools Connections',
       buttons: [
         {
-          iconPath: getIconPaths('add-connection'),
-          tooltip: 'Add new Connection',
+          iconPath: new ThemeIcon('add'),
+          tooltip: 'Add New Connection',
           cb: () => commands.executeCommand(`${EXT_NAMESPACE}.openAddConnectionScreen`),
         } as any,
       ],
@@ -559,6 +600,7 @@ export class ConnectionManagerPlugin implements IExtensionPlugin {
     let password = null;
 
     if (c) {
+      c = await resolveConnection(c);
       c.id = getConnectionId(c);
     }
 

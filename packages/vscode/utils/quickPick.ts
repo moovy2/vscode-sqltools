@@ -39,13 +39,16 @@ export async function quickPick<T = QuickPickItem | any>(
       qPick.hide();
     });
 
+    // Handle case discrepancy between our property name and the vscode one
+    qPick.placeholder = qPickOptions.placeHolder;
+    delete qPickOptions.placeHolder;
+
     Object.keys(qPickOptions).forEach(k => {
       qPick[k] = qPickOptions[k];
     });
     qPick.items = items;
-    qPick.enabled = items.length > 0;
 
-    if (!qPick.enabled) qPick.placeholder = placeHolderDisabled || qPick.placeholder;
+    if (!items.length) qPick.placeholder = placeHolderDisabled || qPick.placeholder;
 
     qPick.title = `${qPickOptions.title || 'Items'} (${items.length})`;
 
@@ -86,8 +89,8 @@ export async function quickPickSearch<T = any>(
           qPick.items = options.length > 0 && typeof options[0] === 'object'
             ? <QuickPickItem[]>options.map(o => ({ ...o, value: o, label: o.value || o.label }))
             : options.map<QuickPickItem>(value => ({ value, label: value.toString() }));
+          qPick.title = `${qPickOptions.title || 'Items'} (${qPick.items.length})`;
         };
-        qPick.title = `${qPickOptions.title || 'Items'} (${qPick.items.length})`;
         if (getOptsPromise instanceof Promise || typeof getOptsPromise['catch'] === 'function') (<Promise<any>>getOptsPromise).then(thenFn).catch(catchFn);
         else getOptsPromise.then(thenFn, catchFn);
       }, debounceTime);

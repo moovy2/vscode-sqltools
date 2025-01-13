@@ -4,16 +4,17 @@ import { getConnectionId } from '@sqltools/util/connection';
 import { SidebarTreeItem } from '@sqltools/plugins/connection-manager/explorer/tree-items';
 import SidebarItem from "@sqltools/plugins/connection-manager/explorer/SidebarItem";
 import SidebarConnection from "@sqltools/plugins/connection-manager/explorer/SidebarConnection";
-import { EventEmitter, TreeDataProvider, TreeItem, TreeView, window, TreeItemCollapsibleState, commands, ThemeIcon } from 'vscode';
+import { EventEmitter, TreeDataProvider, TreeDragAndDropController, TreeItem, TreeView, window, TreeItemCollapsibleState, commands, ThemeIcon, CancellationToken, DataTransfer, DataTransferItem } from 'vscode';
 import sortBy from 'lodash/sortBy';
 import { createLogger } from '@sqltools/log/src';
 import Context from '@sqltools/vscode/context';
 import Config from '@sqltools/util/config-manager';
+import { resolveConnection } from '../extension-util';
 
 const log = createLogger('conn-man:explorer');
 
 class ConnectionGroup extends TreeItem {
-  items: (ConnectionGroup | SidebarTreeItem)[] =  [];
+  items: (ConnectionGroup | SidebarTreeItem)[] = [];
   isGroup: boolean = true;
   getChildren() {
     return this.items;
@@ -22,14 +23,14 @@ class ConnectionGroup extends TreeItem {
 
 const connectedTreeItem: ConnectionGroup = new ConnectionGroup('Connected', TreeItemCollapsibleState.Expanded);
 connectedTreeItem.id = 'CONNECTED'
-connectedTreeItem.iconPath = ThemeIcon.Folder;
+connectedTreeItem.iconPath = new ThemeIcon('folder-active');
 
 const notConnectedTreeItem: ConnectionGroup = new ConnectionGroup('Not Connected', TreeItemCollapsibleState.Expanded);
 notConnectedTreeItem.id = 'DISCONNECTED';
 notConnectedTreeItem.iconPath = ThemeIcon.Folder;
 
 
-export class ConnectionExplorer implements TreeDataProvider<SidebarTreeItem> {
+export class ConnectionExplorer implements TreeDataProvider<SidebarTreeItem>, TreeDragAndDropController<SidebarTreeItem> {
   private treeView: TreeView<TreeItem>;
   private messagesTreeView: TreeView<TreeItem>;
   private messagesTreeViewProvider: MessagesProvider;
@@ -40,8 +41,10 @@ export class ConnectionExplorer implements TreeDataProvider<SidebarTreeItem> {
 
   public async getActive(): Promise<IConnection | null> {
     const conns = await this.getConnections();
-    const active = conns.find(c => c.isActive);
+    let active = conns.find(c => c.isActive);
     if (!active) return null;
+
+    active = await resolveConnection(active);
 
     return {
       ...active,
@@ -78,7 +81,11 @@ export class ConnectionExplorer implements TreeDataProvider<SidebarTreeItem> {
   public async getConnectionById(id: string): Promise<IConnection> {
     if (!id) return null;
     const items = await this.getConnections();
-    return items.find(c => getConnectionId(c) === id) || null;
+    let connection = items.find(c => getConnectionId(c) === id) || null;
+    if (connection) {
+      connection = await resolveConnection(connection);
+    }
+    return connection;
   }
 
   public getSelection() {
@@ -86,7 +93,7 @@ export class ConnectionExplorer implements TreeDataProvider<SidebarTreeItem> {
   }
 
   public constructor() {
-    this.treeView = window.createTreeView(`${EXT_NAMESPACE}ViewConnectionExplorer`, { treeDataProvider: this, canSelectMany: true, showCollapseAll: true });
+    this.treeView = window.createTreeView(`${EXT_NAMESPACE}ViewConnectionExplorer`, { treeDataProvider: this, canSelectMany: true, showCollapseAll: true, dragAndDropController: this });
     Config.addOnUpdateHook(({ event }) => {
       if (
         event.affectsConfig('flattenGroupsIfOne')
@@ -131,7 +138,8 @@ export class ConnectionExplorer implements TreeDataProvider<SidebarTreeItem> {
       return null;
     }
 
-    let active = null;
+    let connectedTreeCount = 0;
+    let active: IConnection<any>;
     if (groupConnected) {
       return this.getGroupedRootItems(items);
     }
@@ -141,6 +149,9 @@ export class ConnectionExplorer implements TreeDataProvider<SidebarTreeItem> {
     items.forEach(item => {
       if (item.isActive) {
         active = item.conn;
+      }
+      if (item.isConnected) {
+        connectedTreeCount++;
       }
       let currentGroup: ConnectionGroup = root;
       if (item.conn && item.conn.group) {
@@ -152,6 +163,12 @@ export class ConnectionExplorer implements TreeDataProvider<SidebarTreeItem> {
     });
     this._onDidChangeActiveConnection.fire(active);
 
+    if (connectedTreeCount > 0) {
+      this.treeView.badge = { value: connectedTreeCount, tooltip: active ? `Connection '${active.name}' is active` : 'No connection is active' };
+    } else {
+      this.treeView.badge = undefined;
+    }
+
     root.items = sortBy(root.items, ['isGroup', 'label']);
 
     return root.items;
@@ -162,7 +179,7 @@ export class ConnectionExplorer implements TreeDataProvider<SidebarTreeItem> {
     notConnectedTreeItem.items = [];
     let connectedTreeCount = 0;
     let notConnectedTreeCount = 0;
-    let active = null;
+    let active: IConnection<any>;
     items.forEach(item => {
       if (item.isActive) {
         active = item.conn;
@@ -184,6 +201,12 @@ export class ConnectionExplorer implements TreeDataProvider<SidebarTreeItem> {
     });
     this._onDidChangeActiveConnection.fire(active);
 
+    if (connectedTreeCount > 0) {
+      this.treeView.badge = { value: connectedTreeCount, tooltip: active ? `Connection '${active.name}' is active` : 'No connection is active' };
+    } else {
+      this.treeView.badge = undefined;
+    }
+
     connectedTreeItem.items = sortBy(connectedTreeItem.items, ['isGroup', 'label']);
     notConnectedTreeItem.items = sortBy(notConnectedTreeItem.items, ['isGroup', 'label']);
 
@@ -193,13 +216,25 @@ export class ConnectionExplorer implements TreeDataProvider<SidebarTreeItem> {
     return [connectedTreeItem, notConnectedTreeItem].filter(a => a.items.length > 0);
   }
 
-  public get addConsoleMessages () {
+  public get addConsoleMessages() {
     return this.messagesTreeViewProvider.addMessages;
   }
+  //#region Drag and drop definitions
+  dropMimeTypes: readonly string[] = ['application/vnd.code.tree.connectionExplorer','text/uri-list'];
+  dragMimeTypes: readonly string[] = ['application/vnd.code.tree.connectionExplorer'];
+  handleDrag(
+    source: readonly SidebarTreeItem[]
+    , dataTransfer: DataTransfer
+    , _token: CancellationToken
+  ): void | Thenable<void> {
+    dataTransfer.set('application/vnd.code.tree.connectionExplorer', new DataTransferItem(JSON.stringify(source)));
+  }
+  //#endregion Drag and drop definitions
 }
 
 export class MessagesProvider implements TreeDataProvider<TreeItem> {
   private items: TreeItem[] = [];
+  private active: boolean = false;
   private _onDidChangeTreeData: EventEmitter<TreeItem> = new EventEmitter();
   public readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   getTreeItem(element: TreeItem): TreeItem | Thenable<TreeItem> {
@@ -215,6 +250,10 @@ export class MessagesProvider implements TreeDataProvider<TreeItem> {
   }
 
   addMessages = (messages: NSDatabase.IResult['messages'] = []) => {
+    if (!this.active && messages.length > 0) {
+      this.active = true;
+      commands.executeCommand('setContext', `${EXT_NAMESPACE}.consoleMessages.active`, true);
+    }
     this.items = messages.map(m => {
       let item: TreeItem;
       if (typeof m === 'string') {
@@ -237,6 +276,7 @@ export class MessagesProvider implements TreeDataProvider<TreeItem> {
     });
     this._onDidChangeTreeData.fire(null);
   }
+
 }
 
 export { SidebarConnection, SidebarItem, SidebarTreeItem };

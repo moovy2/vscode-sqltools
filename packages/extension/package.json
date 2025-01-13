@@ -1,8 +1,8 @@
 {
     "name": "sqltools",
     "displayName": "SQLTools",
-    "description": "Database management done right. Connection explorer, query runner, intellisense, bookmarks, query history. Feel like a database hero!",
-    "version": "0.24.0",
+    "description": "Connecting users to many of the most commonly used databases. Welcome to database management done right.",
+    "version": "0.28.4-SNAPSHOT",
     "publisher": "mtxr",
     "license": "MIT",
     "preview": false,
@@ -18,7 +18,7 @@
     "author": "Matheus Teixeira <me@mteixeira.dev>",
     "private": true,
     "engines": {
-        "vscode": "^1.42.0"
+        "vscode": "^1.78.0"
     },
     "categories": [
         "Programming Languages",
@@ -60,33 +60,8 @@
         "theme": "dark",
         "color": "#555555"
     },
-    "icon": "icons/icon-256.png",
+    "icon": "icons/icon-128.png",
     "badges": [
-        {
-            "description": "Docs",
-            "url": "https://img.shields.io/badge/docs-here-blueviolet?style=for-the-badge",
-            "href": "https://vscode-sqltools.mteixeira.dev?umd_source=marketplace&utm_medium=readme&utm_campaign=ext"
-        },
-        {
-            "description": "VSCode.pro",
-            "url": "https://img.shields.io/badge/Supported%20by-VSCode%20Power%20User%20Course%20%E2%86%92-gray.svg?colorA=655BE1&colorB=4F44D6&style=for-the-badge",
-            "href": "https://a.paddle.com/v2/click/16413/111711?link=1227"
-        },
-        {
-            "description": "Ko-Fi",
-            "url": "https://user-images.githubusercontent.com/707561/112481485-d0d09800-8d55-11eb-8bfd-bb70c9984617.png",
-            "href": "https://ko-fi.com/Y8Y487W9"
-        },
-        {
-            "description": "Patreon Support",
-            "url": "https://img.shields.io/badge/patreon-support-blue.svg?logo=patreon?style=for-the-badge",
-            "href": "https://www.patreon.com/mteixeira"
-        },
-        {
-            "description": "PayPal Donate",
-            "url": "https://img.shields.io/badge/paypal-donate-blue.svg?logo=paypal?style=for-the-badge",
-            "href": "https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=RSMB6DGK238V8"
-        },
         {
             "description": "LICENSE",
             "url": "https://img.shields.io/github/license/mtxr/vscode-sqltools?style=for-the-badge",
@@ -94,11 +69,15 @@
         }
     ],
     "activationEvents": [
-        "*",
-        "onLanguage:sql",
-        "onCommand:sqltools.selectConnection"
+        "*"
     ],
     "contributes": {
+        "authentication": [
+            {
+                "id": "sqltools-driver-credentials",
+                "label": "SQLTools Driver Credentials"
+            }
+        ],
         "colors": [
             {
                 "id": "sqltools.currentQueryBg",
@@ -292,7 +271,7 @@
                 "category": "SQLTools Management"
             },
             {
-                "title": "Open settings",
+                "title": "Open Settings",
                 "command": "sqltools.openSettings",
                 "category": "SQLTools Management"
             },
@@ -307,7 +286,7 @@
                 "category": "SQLTools Sidebar"
             },
             {
-                "title": "Copy value(s)",
+                "title": "Copy Value(s)",
                 "command": "sqltools.copyTextFromTreeItem",
                 "category": "SQLTools Sidebar"
             },
@@ -330,7 +309,7 @@
                 }
             },
             {
-                "title": "New Sql File",
+                "title": "New SQL File",
                 "command": "sqltools.newSqlFile",
                 "category": "SQLTools",
                 "icon": {
@@ -374,58 +353,69 @@
         ],
         "keybindings": [
             {
-                "command": "sqltools.formatSql",
-                "key": "ctrl+e ctrl+b",
-                "mac": "cmd+e cmd+b",
-                "when": "editorTextFocus && !editorReadonly"
-            },
-            {
                 "command": "sqltools.copyTextFromTreeItem",
                 "key": "ctrl+c",
                 "mac": "cmd+c",
                 "when": "focusedView == sqltools-view-connectionExplorer && sideBarFocus"
             },
             {
+                "command": "workbench.action.quickOpen",
+                "key": "ctrl+e ctrl+e",
+                "mac": "cmd+e cmd+e",
+                "when": "!config.sqltools.disableChordKeybindings && !(editorTextFocus || editorHasSelection)"
+            },
+            {
+                "command": "sqltools.formatSql",
+                "key": "ctrl+e ctrl+b",
+                "mac": "cmd+e cmd+b",
+                "when": "!config.sqltools.disableChordKeybindings && editorTextFocus && !editorReadonly && editorHasSelection"
+            },
+            {
                 "command": "sqltools.executeQuery",
                 "key": "ctrl+e ctrl+e",
                 "mac": "cmd+e cmd+e",
-                "when": "editorTextFocus"
+                "when": "!config.sqltools.disableChordKeybindings && editorTextFocus && editorHasSelection"
             },
             {
                 "command": "sqltools.describeTable",
                 "key": "ctrl+e ctrl+d",
-                "mac": "cmd+e cmd+d"
+                "mac": "cmd+e cmd+d",
+                "when": "!config.sqltools.disableChordKeybindings"
             },
             {
                 "command": "sqltools.runFromHistory",
                 "key": "ctrl+e ctrl+h",
-                "mac": "cmd+e cmd+h"
+                "mac": "cmd+e cmd+h",
+                "when": "!config.sqltools.disableChordKeybindings"
             },
             {
                 "command": "sqltools.runFromBookmarks",
                 "key": "ctrl+e ctrl+a",
-                "mac": "cmd+e cmd+a"
+                "mac": "cmd+e cmd+a",
+                "when": "!config.sqltools.disableChordKeybindings"
             },
             {
                 "command": "sqltools.showRecords",
                 "key": "ctrl+e ctrl+s",
-                "mac": "cmd+e cmd+s"
+                "mac": "cmd+e cmd+s",
+                "when": "!config.sqltools.disableChordKeybindings"
             },
             {
                 "command": "sqltools.deleteBookmark",
                 "key": "ctrl+e ctrl+r",
-                "mac": "cmd+e cmd+r"
+                "mac": "cmd+e cmd+r",
+                "when": "!config.sqltools.disableChordKeybindings"
             },
             {
                 "command": "sqltools.bookmarkSelection",
                 "key": "ctrl+e ctrl+q",
                 "mac": "cmd+e q",
-                "when": "editorTextFocus"
+                "when": "!config.sqltools.disableChordKeybindings && editorTextFocus && editorHasSelection"
             }
         ],
         "configuration": {
             "type": "object",
-            "title": "SQLTools Settings",
+            "title": "SQLTools",
             "properties": {
                 "sqltools.disableReleaseNotifications": {
                     "type": "boolean",
@@ -438,7 +428,7 @@
                         "array"
                     ],
                     "default": [],
-                    "markdownDescription": "Name(s) of the connection to auto connect on start",
+                    "markdownDescription": "Name(s) of the connection(s) to auto connect on start.",
                     "items": {
                         "type": "string"
                     }
@@ -446,12 +436,18 @@
                 "sqltools.showStatusbar": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Toggle statusbar visibility."
+                    "description": "Toggle statusbar item visibility.",
+                    "deprecationMessage": "Deprecated. Use statusbar context menu option instead."
+                },
+                "sqltools.disableChordKeybindings": {
+                    "type": "boolean",
+                    "default": false,
+                    "markdownDescription": "SQLTools' default chord keybindings begin with `Ctrl/Cmd+E` and therefore mask the default keybinding of VS Code's `Go to File...` command. When this setting is disabled (the default) you can instead invoke that command with the chord `Ctrl/Cmd+E Ctrl/Cmd+E`. Enable this setting if you don't require SQLTools' chord keybindings."
                 },
                 "sqltools.historySize": {
                     "type": "number",
                     "default": 100,
-                    "description": "Number of queries to keep on History."
+                    "description": "Number of queries to keep in History."
                 },
                 "sqltools.completionLanguages": {
                     "type": "array",
@@ -461,7 +457,7 @@
                     "items": {
                         "type": "string"
                     },
-                    "markdownDescription": "Languages with SQL completion enabled.\n\nYou can use any language identifier defined on https://code.visualstudio.com/docs/languages/identifiers."
+                    "markdownDescription": "Languages with SQL completion enabled. Restart to activate changes.\n\nYou can use any language identifier, including those listed at https://code.visualstudio.com/docs/languages/identifiers."
                 },
                 "sqltools.formatLanguages": {
                     "type": "array",
@@ -471,7 +467,7 @@
                     "items": {
                         "type": "string"
                     },
-                    "markdownDescription": "Languages with SQL formatting enabled.\n\nYou can use any language identifier defined on https://code.visualstudio.com/docs/languages/identifiers."
+                    "markdownDescription": "Languages with SQL formatting enabled. Restart to activate changes.\n\nYou can use any language identifier, including those listed at https://code.visualstudio.com/docs/languages/identifiers."
                 },
                 "sqltools.codelensLanguages": {
                     "type": "array",
@@ -481,12 +477,12 @@
                     "items": {
                         "type": "string"
                     },
-                    "markdownDescription": "Languages with SQL codelens enabled.\n\nYou can use any language identifier defined on https://code.visualstudio.com/docs/languages/identifiers.\n\nMore info about codelens, see https://vscode-sqltools.mteixeira.dev/features/codelens"
+                    "markdownDescription": "Languages that SQLTools will add CodeLenses to.\n\nYou can use any language identifier, including those listed at https://code.visualstudio.com/docs/languages/identifiers.\n\nMore info about codelens, see https://vscode-sqltools.mteixeira.dev/features/codelens"
                 },
                 "sqltools.highlightQuery": {
                     "type": "boolean",
                     "default": true,
-                    "markdownDescription": "Enable or disable hightlight current query under cursor."
+                    "markdownDescription": "Highlight the query at the cursor position."
                 },
                 "sqltools.format": {
                     "type": "object",
@@ -501,8 +497,13 @@
                                 "lower",
                                 "null"
                             ],
+                            "enumDescriptions": [
+                                "Convert to UPPERCASE.",
+                                "Convert to lowercase.",
+                                "Do not change."
+                            ],
                             "default": null,
-                            "description": "Reserverd word case"
+                            "description": "Reserved word case."
                         },
                         "language": {
                             "type": "string",
@@ -513,7 +514,7 @@
                                 "pl/sql"
                             ],
                             "default": "sql",
-                            "description": "Language of formating"
+                            "description": "Language of formatting."
                         },
                         "linesBetweenQueries": {
                             "type": [
@@ -529,52 +530,52 @@
                                 5
                             ],
                             "enumDescriptions": [
-                                "preserve means we will keep line breaks as is between queries",
-                                "1 line",
-                                "2 lines",
-                                "3 lines",
-                                "4 lines",
-                                "5 lines"
+                                "Leave unchanged.",
+                                "1 linebreak.",
+                                "2 linebreaks.",
+                                "3 linebreaks.",
+                                "4 linebreaks.",
+                                "5 linebreaks."
                             ],
                             "default": 1,
-                            "description": "Format line between queries"
+                            "description": "Adjust spacing between queries."
                         }
                     }
                 },
                 "sqltools.queryParams.enableReplace": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Enables query parameter checking"
+                    "description": "Enables query parameter checking."
                 },
                 "sqltools.queryParams.regex": {
                     "type": "string",
-                    "default": "\\$[\\d]+|\\$\\[[\\d\\w]+\\]",
-                    "description": "RegEx used to identify query parameters",
+                    "default": "\\$[\\d]+|\\$\\[([\\d\\w]+)\\]",
+                    "description": "RegEx used to identify query parameters.",
                     "required": true
                 },
                 "sqltools.connections": {
                     "type": "array",
-                    "markdownDescription": "Connections list",
+                    "markdownDescription": "Connections list.",
                     "default": [],
                     "items": {
                         "type": "object",
                         "properties": {
                             "name": {
                                 "type": "string",
-                                "description": "Connection name"
+                                "description": "Connection name."
                             },
                             "group": {
                                 "type": "string",
-                                "description": "Connection group name"
+                                "description": "Connection group name."
                             },
                             "server": {
                                 "type": "string",
-                                "description": "Server address",
+                                "description": "Server address.",
                                 "default": "127.0.0.1"
                             },
                             "port": {
                                 "type": "number",
-                                "description": "Port for connection"
+                                "description": "Port for connection."
                             },
                             "socketPath": {
                                 "type": "string",
@@ -582,18 +583,18 @@
                             },
                             "database": {
                                 "type": "string",
-                                "description": "Database name"
+                                "description": "Database name."
                             },
                             "domain": {
                                 "type": [
                                     "string",
                                     "null"
                                 ],
-                                "description": "Connection domain (for MSSQL/Azure only)"
+                                "description": "Connection domain (for MSSQL/Azure only)."
                             },
                             "username": {
                                 "type": "string",
-                                "description": "Database username"
+                                "description": "Connection username."
                             },
                             "password": {
                                 "type": [
@@ -604,12 +605,12 @@
                             },
                             "askForPassword": {
                                 "type": "boolean",
-                                "description": "Ask for password instead of set it in your settings",
+                                "description": "Ask for password at connection time instead of storing it as plaintext in your settings.",
                                 "default": false
                             },
                             "driver": {
                                 "type": "string",
-                                "markdownDescription": "Connection driver used in this connection."
+                                "markdownDescription": "Connection driver used for this connection."
                             },
                             "dialect": {
                                 "type": "string",
@@ -628,7 +629,7 @@
                                     "null",
                                     "object"
                                 ],
-                                "markdownDescription": "See https://vscode-sqltools.mteixeira.dev/connections/mssql#1-1-specific-options for more details.",
+                                "markdownDescription": "See https://vscode-sqltools.mteixeira.dev/en/drivers/microsoft-sql-server-azure#11-specific-options for more details.",
                                 "default": {},
                                 "properties": {
                                     "encrypt": {
@@ -637,7 +638,7 @@
                                             "null"
                                         ],
                                         "default": null,
-                                        "description": "Encrypt connection"
+                                        "description": "Encrypt connection."
                                     }
                                 }
                             },
@@ -646,7 +647,7 @@
                                     "object",
                                     "null"
                                 ],
-                                "description": "See https://vscode-sqltools.mteixeira.dev/connections/mysql#2-mysqloptions for more details.",
+                                "description": "See https://vscode-sqltools.mteixeira.dev/en/drivers/my-sql#2-mysqloptions for more details.",
                                 "default": {},
                                 "properties": {
                                     "authProtocol": {
@@ -674,7 +675,7 @@
                                     "null"
                                 ],
                                 "default": {},
-                                "markdownDescription": "See https://vscode-sqltools.mteixeira.dev/connections/postgresql#1-1-specific-options for more details.",
+                                "markdownDescription": "See https://vscode-sqltools.mteixeira.dev/en/drivers/postgre-sql#11-specific-options for more details.",
                                 "properties": {
                                     "ssl": {
                                         "type": [
@@ -692,17 +693,25 @@
                                     "null"
                                 ],
                                 "default": {},
-                                "markdownDescription": "See https://vscode-sqltools.mteixeira.dev/connections/oracledb#2-3-specific-options for more details."
+                                "markdownDescription": "See https://node-oracledb.readthedocs.io/en/latest/api_manual/oracledb.html#createpoolparams for more details."
+                            },
+                            "cqlOptions": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "default": {},
+                                "markdownDescription": "See https://docs.datastax.com/en/developer/nodejs-driver/4.1/api/type.ClientOptions/ for more details."
                             },
                             "connectionTimeout": {
                                 "type": "number",
-                                "description": "Connection timeout in seconds",
+                                "description": "Connection timeout in seconds.",
                                 "default": 15
                             },
                             "previewLimit": {
                                 "type": "number",
                                 "default": 50,
-                                "description": "Connection show records limit"
+                                "description": "Maximum number of records to return in table previews."
                             },
                             "icons": {
                                 "type": [
@@ -710,7 +719,7 @@
                                     "null"
                                 ],
                                 "default": null,
-                                "description": "Define an icon for this connection. If not specified, use defaults",
+                                "description": "Define an icon for this connection. If not specified, use defaults.",
                                 "properties": {
                                     "active": {
                                         "type": "string",
@@ -725,47 +734,93 @@
                                         "default": null
                                     }
                                 }
+                            },
+                            "variables": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "default": null,
+                                "description": "Connection variables in a key/value pair format. Use this property with `sqltools.queryParams.enableReplace` to replace the variables without prompting.",
+                                "properties": {}
                             }
                         }
                     }
                 },
-                "sqltools.results": {
+                "sqltools.results.limit": {
+                    "type": "number",
+                    "description": "Maximum number of records to return in results.",
+                    "default": 50
+                },
+                "sqltools.results.showConsoleOnError": {
+                    "type": "boolean",
+                    "description": "Show SQL Console view automatically when an error has occurred.",
+                    "default": true
+                },
+                "sqltools.results.reuseTabs": {
+                    "type": "string",
+                    "description": "How requests reuse results tabs.",
+                    "default": "never",
+                    "enum": [
+                        "never",
+                        "connection"
+                    ],
+                    "enumDescriptions": [
+                        "Every request creates a new tab.",
+                        "There is a single tab for each connection."
+                    ]
+                },
+                "sqltools.results.location": {
+                    "type": [
+                        "string"
+                    ],
+                    "default": "next",
+                    "enum": [
+                        "none",
+                        "next",
+                        "current",
+                        "end",
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9"
+                    ],
+                    "enumDescriptions": [
+                        "Do not open a results tab.",
+                        "New group if nothing open. Second group if currently active text editor is in first group. Otherwise third group.",
+                        "Current active group.",
+                        "The third group.",
+                        "First group.",
+                        "Second group.",
+                        "Third group.",
+                        "Fourth group.",
+                        "Fifth group.",
+                        "Sixth group.",
+                        "Seventh group.",
+                        "Eighth group.",
+                        "Ninth group."
+                    ],
+                    "markdownDescription": "Define which edit group the results tab should appear in. Empty groups are never created. For example, if setting is 4 but only one group currently exists then the first set of results will create a new group 2, the second a group 3 and the third and subsequent sets of results will appear in group 4."
+                },
+                "sqltools.results.customization": {
                     "type": "object",
+                    "description": "Properties that customize the appearance of results tables.",
                     "default": {},
                     "properties": {
-                        "limit": {
-                            "type": "number",
-                            "description": "Global show records limit",
-                            "default": 50
+                        "font-family": {
+                            "type": "string"
                         },
-                        "location": {
-                            "type": [
-                                "string",
-                                "number"
-                            ],
-                            "default": "next",
-                            "enum": [
-                                "next",
-                                "current",
-                                "end"
-                            ],
-                            "markdownDescription": "Define where the results should show up. Use the defined strings or any number defined in https://code.visualstudio.com/api/references/vscode-api#ViewColumn"
+                        "font-size": {
+                            "type": "string"
                         },
-                        "customization": {
-                            "type": "object",
-                            "default": {},
-                            "properties": {
-                                "font-family": {
-                                    "type": "string"
-                                },
-                                "font-size": {
-                                    "type": "string"
-                                },
-                                "table-cell-padding": {
-                                    "type": "string",
-                                    "default": "2px 4px"
-                                }
-                            }
+                        "table-cell-padding": {
+                            "type": "string",
+                            "default": "2px 4px"
                         }
                     }
                 },
@@ -782,7 +837,7 @@
                         "json"
                     ],
                     "default": "prompt",
-                    "description": "Default export results mode."
+                    "description": "Default mode for results Export command."
                 },
                 "sqltools.defaultOpenType": {
                     "type": "string",
@@ -792,7 +847,44 @@
                         "json"
                     ],
                     "default": "prompt",
-                    "description": "Default open results mode."
+                    "description": "Default mode for results Open command."
+                },
+                "sqltools.csvExport.delimiter": {
+                    "type": "string",
+                    "minLength": 1,
+                    "default": ",",
+                    "description": "CSV field delimiter, one character only."
+                },
+                "sqltools.csvExport.header": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Display the column names on the first line."
+                },
+                "sqltools.csvExport.quote": {
+                    "type": "string",
+                    "default": "\"",
+                    "description": "The quote characters, an empty value will preserve the original field."
+                },
+                "sqltools.csvExport.quoted": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Quote all the non-empty fields even if not required."
+                },
+                "sqltools.csvExport.quoted_empty": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Quote empty fields and overrides `#sqltools.csvExport.quoted_string#` on empty strings when defined."
+                },
+                "sqltools.csvExport.quoted_string": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Quote all fields of type string even if not required."
+                },
+                "sqltools.csvExport.record_delimiter": {
+                    "type": "string",
+                    "minLength": 1,
+                    "default": "unix",
+                    "markdownDescription": "String used to delimit record rows or a special value: `unix` (`\\n`), `mac` (`\\r`), `windows` (`\\r\\n`), `ascii` (`\\u001e`), or `unicode` (`\\u2028`)."
                 },
                 "sqltools.useNodeRuntime": {
                     "type": [
@@ -803,10 +895,15 @@
                     "default": false,
                     "description": "Enable node runtime usage."
                 },
+                "sqltools.disableNodeDetectNotifications": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Disable node runtime detection notifications."
+                },
                 "sqltools.languageServerEnv": {
                     "type": "object",
                     "default": {},
-                    "description": "Set environment variables to be passed to language server. Eg: ORACLE_HOME, PATH..."
+                    "markdownDescription": "Set environment variables to be passed to language server. For example `ORACLE_HOME`, `PATH`...\n\nRestart to activate changes."
                 },
                 "sqltools.sortColumns": {
                     "type": [
@@ -823,21 +920,21 @@
                 "sqltools.flattenGroupsIfOne": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Flatten groups with has only one child"
+                    "description": "Flatten groups that have only one child."
                 },
                 "sqltools.autoOpenSessionFiles": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Auto open session file when connect"
+                    "description": "Auto open session file when connecting."
                 },
                 "sqltools.sessionFilesFolder": {
                     "type": "string",
                     "default": "",
-                    "description": "Folder for session files to be saved in"
+                    "description": "Folder for session files to be saved in."
                 },
                 "sqltools.dependencyManager": {
                     "type": "object",
-                    "description": "Dependency manager settings",
+                    "description": "Dependency Manager settings.",
                     "default": {
                         "packageManager": "npm",
                         "installArgs": [
@@ -851,12 +948,12 @@
                     "properties": {
                         "packageManager": {
                             "type": "string",
-                            "markdownDescription": "Package manager name or path. Eg. yarn, npm or absolute paths like /usr/bin/npm",
+                            "markdownDescription": "Package manager name or path. For example `yarn`, `npm` or absolute paths like `/usr/bin/npm`.",
                             "default": "npm"
                         },
                         "installArgs": {
                             "type": "array",
-                            "description": "Array of args passed when installing. If you use yarn, this shoud be set to `[\"add\"]`",
+                            "markdownDescription": "Array of args passed when installing. If you use `yarn` this shoud be set to `[\"add\"]`.",
                             "default": [
                                 "install"
                             ]
@@ -871,13 +968,13 @@
                         "autoAccept": {
                             "type": "boolean",
                             "default": false,
-                            "description": "Ignore confirmation requests to install or updagre dependencies."
+                            "description": "Skip confirmation requests when installing or upgrading dependencies."
                         }
                     }
                 },
                 "sqltools.connectionExplorer.groupConnected": {
                     "type": "boolean",
-                    "description": "Group connection in two groups, 'Connected' and 'Not Connected'",
+                    "description": "Display connections in two groups, 'Connected' and 'Not Connected'.",
                     "default": false
                 }
             }
@@ -900,7 +997,8 @@
             "sqltoolsPanelContainer": [
                 {
                     "id": "sqltoolsViewConsoleMessages",
-                    "name": "Messages"
+                    "name": "Messages",
+                    "when": "sqltools.consoleMessages.active"
                 }
             ]
         },
@@ -923,7 +1021,7 @@
         "viewsWelcome": [
             {
                 "view": "sqltoolsViewConnectionExplorer",
-                "contents": "No connections found.\n[Add new connection](command:sqltools.openAddConnectionScreen)"
+                "contents": "No connections found.\n[Add New Connection](command:sqltools.openAddConnectionScreen)"
             }
         ],
         "menus": {
@@ -1185,13 +1283,13 @@
         "@types/command-exists": "^1.2.0",
         "@types/jest": "^24.0.11",
         "@types/lodash": "^4.14.123",
-        "@types/vscode": "^1.42.0",
+        "@types/vscode": "^1.72.0",
         "cross-env": "^7.0.2",
         "jest": "^26.6.3",
         "jest-cli": "^26.6.3",
         "ts-jest": "^26.5.4",
         "lodash": "^4.17.19",
-        "typescript": "~4.0.2",
+        "typescript": "~4.8.3",
         "vscode-test": "^1.5.1"
     },
     "dependencies": {
@@ -1200,5 +1298,8 @@
         "@sqltools/util": "*",
         "command-exists": "1.2.9",
         "vscode-languageclient": "6.1.3"
+    },
+    "scripts": {
+        "test:tsc": "tsc --noEmit -p ./tsconfig.json --skipLibCheck"
     }
 }

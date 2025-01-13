@@ -4,15 +4,15 @@ import fs from 'fs';
 import Config from '@sqltools/util/config-manager';
 import { DISPLAY_NAME, EXT_NAMESPACE, EXT_CONFIG_NAMESPACE } from '@sqltools/util/constants';
 import { sync as commandExists } from 'command-exists';
-import { env as VSCodeEnv, version as VSCodeVersion, workspace as Wspc, window, commands, ConfigurationTarget, workspace } from 'vscode';
+import { workspace as Wspc, window, commands, ConfigurationTarget } from 'vscode';
 import { CloseAction, ErrorAction, ErrorHandler as LanguageClientErrorHandler, LanguageClient, LanguageClientOptions, NodeModule, ServerOptions, TransportKind } from 'vscode-languageclient';
 import ErrorHandler from '../api/error-handler';
-import telemetry from '@sqltools/util/telemetry';
-import { ILanguageClient, ITelemetryArgs } from '@sqltools/types';
+import { ILanguageClient } from '@sqltools/types';
 import Context from '@sqltools/vscode/context';
 import uniq from 'lodash/uniq';
 import { ElectronNotSupportedNotification } from '@sqltools/base-driver/dist/lib/notification';
 import { ExitCalledNotification, ServerErrorNotification } from '@sqltools/language-server/src/notifications';
+import detectNodePath from "./detect-node-path";
 
 const log = createLogger('lc');
 
@@ -22,12 +22,29 @@ export class SQLToolsLanguageClient implements ILanguageClient {
 
   private avoidRestart = false;
   constructor() {
+    Config.addOnUpdateHook(async ({ event }) => {
+      if (event.affectsConfig('useNodeRuntime')) {
+        const res = await window.showWarningMessage('Use node runtime setting change. You must reload window to take effect.', 'Reload now');
+        if (!res) return;
+        commands.executeCommand('workbench.action.reloadWindow');
+      }
+
+      if (event.affectsConfig('languageServerEnv')) {
+        const res = await window.showWarningMessage('New language server environment variables set. You must reload window to take effect.', 'Reload now');
+        if (!res) return;
+        commands.executeCommand('workbench.action.reloadWindow');
+      }
+    });
+  }
+
+  public async init() {
+    const serverOptions = await this.getServerOptions();
     this.client = new LanguageClient(
       EXT_CONFIG_NAMESPACE,
       `${DISPLAY_NAME} Language Server`,
-      this.getServerOptions(),
+      serverOptions,
       this.getClientOptions(),
-      );
+    );
     const defaultErrorHandler = this.client.createDefaultErrorHandler();
 
     this.clientErrorHandler = {
@@ -45,20 +62,6 @@ export class SQLToolsLanguageClient implements ILanguageClient {
     });
 
     this.registerBaseNotifications();
-
-    Config.addOnUpdateHook(async ({ event }) => {
-      if (event.affectsConfig('useNodeRuntime')) {
-        const res = await window.showWarningMessage('Use node runtime setting change. You must reload window to take effect.', 'Reload now');
-        if (!res) return;
-        commands.executeCommand('workbench.action.reloadWindow');
-      }
-
-      if (event.affectsConfig('languageServerEnv')) {
-        const res = await window.showWarningMessage('New language server environment variables set. You must reload window to take effect.', 'Reload now');
-        if (!res) return;
-        commands.executeCommand('workbench.action.reloadWindow');
-      }
-    });
   }
 
   public start() {
@@ -79,15 +82,17 @@ export class SQLToolsLanguageClient implements ILanguageClient {
     await this.client.onReady();
     return this.client.sendNotification.apply(this.client, arguments);
   }
+
   public onNotification: LanguageClient['onNotification'] = async function () {
     await this.client.onReady();
     return this.client.onNotification.apply(this.client, arguments);
   }
 
-  private getServerOptions(): ServerOptions {
+  private async getServerOptions(): Promise<ServerOptions> {
     const serverModule = Context.asAbsolutePath('dist/languageserver.js');
     let runtime: string = undefined;
     const useNodeRuntime = Config.useNodeRuntime;
+
     if (useNodeRuntime) {
       if (typeof useNodeRuntime === 'string') {
         const runtimePath = path.normalize(useNodeRuntime);
@@ -95,13 +100,26 @@ export class SQLToolsLanguageClient implements ILanguageClient {
           runtime = runtimePath;
         }
       } else {
-        if (commandExists('node')) {
-          runtime = 'node';
+        log.info('Detecting node path (if this stalls check Terminal view for the stuck session and kill it)...');
+        const nodePath = await detectNodePath();
+        if (nodePath) {
+          const message = `Node runtime auto-detected. Using ${nodePath}.`;
+          if (!Config.disableNodeDetectNotifications) {
+            window.showInformationMessage(message);
+          }
+          log.info(message)
+          runtime = nodePath
+        } else {
+          if (commandExists('node')) {
+            runtime = 'node';
+          }
         }
       }
       if (!runtime) {
         const message = 'Node runtime not found. Using default as a fallback.';
-        window.showInformationMessage(message);
+        if (!Config.disableNodeDetectNotifications) {
+          window.showInformationMessage(message);
+        }
         log.info(message)
       }
     }
@@ -133,16 +151,8 @@ export class SQLToolsLanguageClient implements ILanguageClient {
   }
 
   private getClientOptions(): LanguageClientOptions {
-    const telemetryArgs: ITelemetryArgs = {
-      enableTelemetry: workspace.getConfiguration().get('telemetry.enableTelemetry') || false,
-      extraInfo: {
-        sessId: VSCodeEnv.sessionId,
-        uniqId: VSCodeEnv.machineId,
-        version: VSCodeVersion,
-      },
-    };
     let selector = [];
-    if (Config.completionLanguages){
+    if (Config.completionLanguages) {
       selector = selector.concat(Config.completionLanguages);
     }
 
@@ -165,31 +175,22 @@ export class SQLToolsLanguageClient implements ILanguageClient {
     return {
       documentSelector: selector,
       initializationOptions: {
-        telemetry: telemetryArgs,
         extensionPath: Context.extensionPath,
         userEnvVars: Config.languageServerEnv
       },
       progressOnInitialization: true,
       outputChannel: logger.outputChannel as any,
       synchronize: {
-        configurationSection: [EXT_CONFIG_NAMESPACE, 'telemetry'],
+        configurationSection: [EXT_CONFIG_NAMESPACE],
         fileEvents: Wspc.createFileSystemWatcher(`**/.${EXT_NAMESPACE}rc`),
       },
       initializationFailedHandler: error => {
-        telemetry.registerException(error, {
-          message: 'Server initialization failed.',
-        });
         this.client.error('Server initialization failed.', error);
         this.client.outputChannel.show(true);
         return false;
       },
       errorHandler: {
         error: (error, message, count): ErrorAction => {
-          telemetry.registerException(error, {
-            message: 'Language Server error.',
-            givenMessage: message,
-            count,
-          });
           return this.clientErrorHandler.error(error, message, count);
         },
         closed: (): CloseAction => {
@@ -207,21 +208,20 @@ export class SQLToolsLanguageClient implements ILanguageClient {
     this.client.onNotification(ServerErrorNotification, onError);
     this.client.onNotification(ElectronNotSupportedNotification, this.electronNotSupported);
 
-    telemetry.registerMessage('info', 'LanguageClient ready');
     log.info('LanguageClient ready');
   }
 
   private electronNotSupported = async () => {
     const r = await window.showInformationMessage(
-      `VSCode engine is not supported. You should enable \'${EXT_CONFIG_NAMESPACE}.useNodeRuntime\' and have NodeJS installed to continue.`,
+      `VS Code engine is not supported. You should enable \'${EXT_CONFIG_NAMESPACE}.useNodeRuntime\' and have NodeJS installed to continue.`,
       'Enable now',
     );
     if (!r) return;
     await Wspc.getConfiguration(EXT_CONFIG_NAMESPACE).update('useNodeRuntime', true, ConfigurationTarget.Global);
-    try { await Wspc.getConfiguration(EXT_CONFIG_NAMESPACE).update('useNodeRuntime', true, ConfigurationTarget.Workspace) } catch(e) {}
-    try { await Wspc.getConfiguration(EXT_CONFIG_NAMESPACE).update('useNodeRuntime', true, ConfigurationTarget.WorkspaceFolder) } catch(e) {}
+    try { await Wspc.getConfiguration(EXT_CONFIG_NAMESPACE).update('useNodeRuntime', true, ConfigurationTarget.Workspace) } catch (e) { }
+    try { await Wspc.getConfiguration(EXT_CONFIG_NAMESPACE).update('useNodeRuntime', true, ConfigurationTarget.WorkspaceFolder) } catch (e) { }
     const res = await window.showInformationMessage(
-      `\'${EXT_NAMESPACE}.useNodeRuntime\' enabled. You must reload VSCode to take effect.`, 'Reload now');
+      `\'${EXT_NAMESPACE}.useNodeRuntime\' enabled. You must reload VS Code to take effect.`, 'Reload now');
     if (!res) return;
     commands.executeCommand('workbench.action.reloadWindow');
   }

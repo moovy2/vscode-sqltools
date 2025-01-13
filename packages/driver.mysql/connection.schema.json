@@ -13,14 +13,15 @@
       "minLength": 1
     },
     "usePassword": {
-      "title": "Use password",
+      "title": "Password mode",
       "type": "string",
       "enum": [
+        "SQLTools Driver Credentials",
         "Ask on connect",
         "Use empty password",
-        "Save password"
+        "Save as plaintext in settings"
       ],
-      "default": "Ask on connect"
+      "default": "SQLTools Driver Credentials"
     },
     "password": {
       "title": "Password",
@@ -49,6 +50,55 @@
           "enum": ["default", "xprotocol"],
           "default": "default",
           "title": "Authentication Protocol"
+        },
+        "enableSsl": {
+          "type": "string",
+          "title": "SSL",
+          "enum": ["Enabled", "Disabled"],
+          "default": "Disabled"
+        }
+      },
+      "dependencies": {
+        "enableSsl" : {
+          "oneOf": [
+            {
+              "properties": {
+                "enableSsl": {
+                  "enum": ["Disabled"]
+                }
+              }
+            },
+            {
+              "properties": {
+                "enableSsl": {
+                  "enum": ["Enabled"]
+                },
+                "ssl": {
+                  "type": "object",
+                  "title": "SSL Options (node.TLSSocket)",
+                  "description": "Passed directly to node.TLSSocket. Check more here: https://nodejs.org/api/tls.html#tls_new_tls_tlssocket_socket_options",
+                  "properties": {
+                    "ca": {
+                      "type": "string",
+                      "title": "Certificate Authority (CA) Certificate File"
+                    },
+                    "cert": {
+                      "type": "string",
+                      "title": "Server Public Key Certificate File"
+                    },
+                    "key": {
+                      "type": "string",
+                      "title": "Server Private Key Certificate File"
+                    },
+                    "crl": {
+                      "type": "string",
+                      "title": "Certificate Revocation Lists File"
+                    }
+                  }
+                }
+              }
+            }
+          ]
         }
       }
     },
@@ -152,10 +202,6 @@
               "enum": [
                 "Ask on connect"
               ]
-          },
-            "askForPassword": {
-              "type": "boolean",
-              "default": true
             }
           }
         },
@@ -172,7 +218,7 @@
           "properties": {
             "usePassword": {
               "enum": [
-                "Save password"
+                "Save as plaintext in settings"
               ]
             },
             "password": {
@@ -182,6 +228,15 @@
           "required": [
             "password"
           ]
+        },
+        {
+          "properties": {
+            "usePassword": {
+              "enum": [
+                "SQLTools Driver Credentials"
+              ]
+            }
+          }
         }
       ]
     }

@@ -1,32 +1,43 @@
 import { EXT_NAMESPACE } from '@sqltools/util/constants';
 import { IConnection, MConnectionExplorer, ContextValue, IIcons } from '@sqltools/types';
 import { getConnectionDescription, getConnectionId } from '@sqltools/util/connection';
-import { TreeItemCollapsibleState, Uri, commands } from 'vscode';
+import { TreeItemCollapsibleState, Uri, ThemeIcon, commands } from 'vscode';
 import SidebarAbstractItem from './SidebarAbstractItem';
 import SidebarItem from "./SidebarItem";
 import get from 'lodash/get';
 import { createLogger } from '@sqltools/log/src';
-import PluginResourcesMap, { buildResouceKey } from '@sqltools/util/plugin-resources';
+import PluginResourcesMap, { buildResourceKey } from '@sqltools/util/plugin-resources';
 
 const log = createLogger('conn-explorer');
 
 export default class SidebarConnection extends SidebarAbstractItem<SidebarItem> {
   parent = null;
 
-  get contextValue() {
-    return this.isConnected ? ContextValue.CONNECTED_CONNECTION : ContextValue.CONNECTION;
+  constructor(public conn: IConnection) {
+    super(conn.name, conn.isConnected ? TreeItemCollapsibleState.Collapsed : TreeItemCollapsibleState.None);
+    this.description = getConnectionDescription(this.conn);
+    this.id = this.getId();
+    this.tooltip = this.getTooltip();
+    this.iconPath = this.getIconPath();
+    this.command = this.getCommand();
   }
 
-  get description() {
-    return getConnectionDescription(this.conn);
+  getId() {
+    return getConnectionId(this.conn);
+  }
+
+  get contextValue() {
+    return this.isConnected ? ContextValue.CONNECTED_CONNECTION : ContextValue.CONNECTION;
   }
 
   get isConnected() {
     return this.conn.isConnected;
   }
-  get id() {
-    return <string>this.getId();
+
+  get isActive() {
+    return this.conn.isActive;
   }
+
   get value() {
     return this.conn.database;
   }
@@ -34,10 +45,13 @@ export default class SidebarConnection extends SidebarAbstractItem<SidebarItem> 
   get metadata() {
     return <MConnectionExplorer.IChildItem>{
       label: this.label,
-      type: this.contextValue
+      type: this.contextValue,
+      database: this.conn.database,
+      schema: ''
     };
   }
-  get tooltip() {
+
+  private getTooltip() {
     if (this.isActive)
       return `Active Connection - Queries will run for this connection`;
     return undefined;
@@ -54,7 +68,7 @@ export default class SidebarConnection extends SidebarAbstractItem<SidebarItem> 
     return items.map(item => new SidebarItem(item, this));
   }
 
-  public get command () {
+  private getCommand() {
     if (!this.isActive) {
       return {
         title: 'Connect',
@@ -64,15 +78,12 @@ export default class SidebarConnection extends SidebarAbstractItem<SidebarItem> 
     }
   }
 
-  constructor(public conn: IConnection) {
-    super(conn.name, conn.isConnected ? TreeItemCollapsibleState.Collapsed : TreeItemCollapsibleState.None);
-  }
-  get iconPath() {
+  private getIconPath(): Uri | ThemeIcon {
     try {
       if (this.isActive) {
         return this.getIcon('active');
       }
-      else if (this.contextValue === ContextValue.CONNECTED_CONNECTION) {
+      else if (this.isConnected) {
         return this.getIcon('connected');
       }
       return this.getIcon('disconnected');
@@ -80,15 +91,8 @@ export default class SidebarConnection extends SidebarAbstractItem<SidebarItem> 
       log.error(error);
     }
   }
-  getId() {
-    return getConnectionId(this.conn);
-  }
 
-  get isActive() {
-    return this.conn.isActive;
-  }
-
-  private getIcon = (type: 'active' | 'connected' | 'disconnected') => {
+  private getIcon = (type: 'active' | 'connected' | 'disconnected'): Uri | ThemeIcon => {
     if (get(this, ['conn', 'icons', type])) {
       return Uri.parse(this.conn.icons[type]);
     }
@@ -99,6 +103,9 @@ export default class SidebarConnection extends SidebarAbstractItem<SidebarItem> 
       disconnected: 'inactive',
     };
 
-    return Uri.parse((PluginResourcesMap.get<IIcons>(buildResouceKey({type: 'driver', name: this.conn.driver, resource: 'icons' })) || {})[typeMap[type] as any || 'default']);
+    const iconFile = (PluginResourcesMap.get<IIcons>(buildResourceKey({ type: 'driver', name: this.conn.driver, resource: 'icons' })) || {})[typeMap[type] as any || 'default'];
+
+    // Fall back to a ThemeIcon if driver didn't register one of the type we want
+    return iconFile ? Uri.file(iconFile) : new ThemeIcon('server-environment');
   }
 }

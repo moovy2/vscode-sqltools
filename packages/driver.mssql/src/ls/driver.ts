@@ -16,7 +16,7 @@ export default class MSSQL extends AbstractDriver<MSSQLLib.ConnectionPool, any> 
       return this.connection;
     }
 
-    const { encrypt, ...mssqlOptions }: any = this.credentials.mssqlOptions || { encrypt: true };
+    const { encrypt, trustServerCertificate, ...mssqlOptions }: any = this.credentials.mssqlOptions || { encrypt: true };
 
     let encryptAttempt = typeof encrypt !== 'undefined'
       ? encrypt : true;
@@ -42,6 +42,7 @@ export default class MSSQL extends AbstractDriver<MSSQLLib.ConnectionPool, any> 
       options: {
         ...((mssqlOptions || {}).options || {}),
         encrypt: encryptAttempt,
+        trustServerCertificate: trustServerCertificate,
       },
     });
 
@@ -49,6 +50,10 @@ export default class MSSQL extends AbstractDriver<MSSQLLib.ConnectionPool, any> 
       pool.on('error', reject);
       pool.connect().then(resolve).catch(reject);
     }).catch(e => {
+      // The errors below are relevant to database configuration
+      if (e.code === "ESOCKET" || e.code === "ELOGIN" || e.code === "EINSTLOOKUP") {
+        throw e;
+      }
       if (this.retryCount === 0) {
         this.retryCount++;
         return this.open(!encryptAttempt)
@@ -152,7 +157,15 @@ export default class MSSQL extends AbstractDriver<MSSQLLib.ConnectionPool, any> 
   private async getChildrenForGroup({ parent, item }: Arg0<IConnectionDriver['getChildrenForItem']>) {
     switch (item.childType) {
       case ContextValue.SCHEMA:
-        return this.queryResults(this.queries.fetchSchemas(parent as NSDatabase.IDatabase));
+        try {
+          const result = await this.queryResults(
+            this.queries.fetchSchemas(parent as NSDatabase.IDatabase)
+          );
+          return result;
+        } catch (error) {
+          this.close();
+          return [];
+        }
       case ContextValue.TABLE:
         return this.queryResults(this.queries.fetchTables(parent as NSDatabase.ISchema));
       case ContextValue.VIEW:

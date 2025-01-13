@@ -16,11 +16,12 @@
       "title": "Use password",
       "type": "string",
       "enum": [
+        "SQLTools Driver Credentials",
         "Ask on connect",
         "Use empty password",
-        "Save password"
+        "Save as plaintext in settings"
       ],
-      "default": "Ask on connect"
+      "default": "SQLTools Driver Credentials"
     },
     "password": {
       "title": "Password",
@@ -93,7 +94,8 @@
                   "description": "Passed directly to node.TLSSocket. Check more here: https://nodejs.org/api/tls.html#tls_new_tls_tlssocket_socket_options",
                   "properties": {
                     "rejectUnauthorized": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "default": true
                     },
                     "requestCert": {
                       "type": "boolean"
@@ -236,7 +238,7 @@
           "properties": {
             "usePassword": {
               "enum": [
-                "Save password"
+                "Save as plaintext in settings"
               ]
             },
             "password": {
@@ -246,6 +248,15 @@
           "required": [
             "password"
           ]
+        },
+        {
+          "properties": {
+            "usePassword": {
+              "enum": [
+                "SQLTools Driver Credentials"
+              ]
+            }
+          }
         }
       ]
     }

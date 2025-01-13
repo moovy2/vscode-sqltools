@@ -36,7 +36,7 @@ export interface IBaseQueries {
   fetchRecords: QueryBuilder<{ limit: number; offset: number; table: NSDatabase.ITable; }, any>;
   countRecords: QueryBuilder<{ table: NSDatabase.ITable; }, { total: number; }>;
   fetchSchemas?: QueryBuilder<NSDatabase.IDatabase, NSDatabase.ISchema>;
-  fetchDatabases?: QueryBuilder<never, NSDatabase.IDatabase>;
+  fetchDatabases?: QueryBuilder<never | MConnectionExplorer.IChildItem, NSDatabase.IDatabase>;
   fetchTables: QueryBuilder<NSDatabase.ISchema, NSDatabase.ITable>;
   searchTables: QueryBuilder<{ search: string, limit?: number }, NSDatabase.ITable>;
   searchColumns: QueryBuilder<{ search: string, tables: NSDatabase.ITable[], limit?: number }, NSDatabase.IColumn>;
@@ -59,7 +59,7 @@ export interface IConnection<DriverOptions = any> {
    * @type {string}
    * @memberof IConnection
    */
-   group?: string;
+  group?: string;
   /**
    * Server address
    * @type {string}
@@ -133,28 +133,28 @@ export interface IConnection<DriverOptions = any> {
    */
   connectString?: string;
   /**
-   * MSSQL specific driver options. See https://vscode-sqltools.mteixeira.dev/connections/mssql#1-1-specific-options
+   * MSSQL specific driver options. See https://vscode-sqltools.mteixeira.dev/en/drivers/microsoft-sql-server-azure#11-specific-options
    * @type {any}
    * @memberof IConnection
    */
   mssqlOptions?: { encrypt?: boolean };
 
   /**
-   * MySQL specific driver options
+   * MySQL specific driver options. See https://vscode-sqltools.mteixeira.dev/en/drivers/my-sql#2-mysqloptions
    * @type {any}
    * @memberof IConnection
    */
   mysqlOptions?: DriverOptions;
 
   /**
-   * PostgreSQL/Redshift specific driver options. See https://vscode-sqltools.mteixeira.dev/connections/postgresql#1-1-specific-options
+   * PostgreSQL/Redshift specific driver options. See https://vscode-sqltools.mteixeira.dev/en/drivers/postgre-sql#11-specific-options
    * @type {any}
    * @memberof IConnection
    */
   pgOptions?: DriverOptions;
 
   /**
-   * OracleDB specific driver options (pool). See https://github.com/oracle/node-oracledb/blob/master/doc/api.md#createpoolpoolattrs
+   * OracleDB specific driver options (pool). See https://node-oracledb.readthedocs.io/en/latest/api_manual/oracledb.html#createpoolparams
    * @type {PoolAttributes}
    * @memberof IConnection
    */
@@ -191,22 +191,36 @@ export interface IConnection<DriverOptions = any> {
     connected?: string;
     disconnected?: string;
   };
-
-
-
-   // WONT BE INCLUDED IN SETTINGS
-   /**
-   * Connection flag. This is not a settings. It's generated in runtime
-   * @type {boolean}
+  /**
+   * Connection variables. Use this property with `sqltools.queryParams.enableReplace` to replace the variables without prompting.
+   * @type {object}
    * @memberof IConnection
    */
+  variables?: {
+    [key: string]: string
+  }
+
+  // WONT BE INCLUDED IN SETTINGS
+  /**
+  * Connection flag. This is not a setting. It is determined at runtime
+  * @type {boolean}
+  * @memberof IConnection
+  */
   isConnected: boolean;
   /**
-   * Connection flag. This is not a settings. It's generated in runtime
+   * Connection flag. This is not a setting. It is determined at runtime
    * @type {boolean}
    * @memberof IConnection
    */
   isActive: boolean;
+  /**
+  * This is not a setting. It is determined at runtime and indicates whether the `password` property
+  * came from the driver's resolveConnection callback (true) or not (false)
+  * @type {boolean}
+  * @memberof IConnection
+  */
+  isPasswordResolved?: boolean;
+
   [id: string]: any;
 }
 
@@ -216,7 +230,7 @@ export interface IQueryOptions {
   [k: string]: any;
 }
 export interface IConnectionDriverConstructor {
-  new (credentials: IConnection<any>, getWorkspaceFolders?: LSIConnection['workspace']['getWorkspaceFolders']): IConnectionDriver;
+  new(credentials: IConnection<any>, getWorkspaceFolders?: LSIConnection['workspace']['getWorkspaceFolders']): IConnectionDriver;
 }
 export interface IConnectionDriver {
   connection: any;
@@ -262,14 +276,14 @@ export module MConnectionExplorer {
     /**
      * Icon id from https://microsoft.github.io/vscode-codicons/dist/codicon.html
      */
-     iconId?: string;
-     /**
-      * sqltools icons
-      */
-     iconName?: string;
-     /**
-     * for resource_groups
+    iconId?: string;
+    /**
+     * sqltools icons
      */
+    iconName?: string;
+    /**
+    * for resource_groups
+    */
     childType?: ContextValue;
     /**
      * SnippetString used to insert as text
@@ -326,14 +340,14 @@ export namespace NSDatabase {
     source?: string;
   }
 
-  export interface IProcedure extends IFunction {}
+  export interface IProcedure extends IFunction { }
 
   export interface IStaticCompletion {
     label: string;
     filterText?: string;
     sortText?: string;
     detail: string;
-    documentation: { kind: 'markdown', value: string};
+    documentation: { kind: 'markdown', value: string };
   }
 
   export interface IResult<T extends { [key: string]: any } = any> {
@@ -371,42 +385,6 @@ export namespace NSDatabase {
 
 export interface INotifyErrorData {
   notification: string; dontNotify?: boolean; args?: any
-}
-
-export interface ITelemetryArgs {
-  enableTelemetry?: boolean;
-  extraInfo?: {
-    uniqId?: string;
-    sessId?: string;
-    version?: string;
-  };
-}
-
-export abstract class ATelemetry {
-  public static enabled: Boolean;
-
-  public static extraInfo: ITelemetryArgs['extraInfo'];
-
-  abstract updateOpts(opts: ITelemetryArgs): void;
-
-  abstract enable(): void;
-
-  abstract disable(): void;
-
-  abstract registerException(error: Error, data?: { [key: string]: any }): void;
-
-  abstract registerMessage(
-    severity: 'info' | 'warn' | 'debug' | 'error' | 'critical' | 'fatal',
-    message: string,
-    value?: string,
-  ): void;
-
-  abstract registerEvent(
-    name: string,
-    properties?: { [key: string]: any }
-  ): void;
-
-  abstract registerTime(timeKey: string, timer: ITimer): void;
 }
 
 export interface ITimer {
@@ -494,12 +472,29 @@ export interface IResultsOptions {
   limit: number;
 
   /**
-   * Define where the results should show up. Use the defined strings or any number defined in https://code.visualstudio.com/api/references/vscode-api#ViewColumn
+   * Show SQL Console view automatically when an error has occurred
+   * @type {boolean}
+   * @default true
+   * @memberof IResultsOptions
+   */
+  showConsoleOnError?: boolean;
+
+  /**
+   * Defines how results tabs are or are not reused
+   * @type {string}
+   * @default 'never'
+   * @memberof IResultsOptions
+   */
+  reuseTabs?: 'never' | 'connection';
+
+  /**
+   * Defines where the results should show up. Use the defined strings or any number defined in https://code.visualstudio.com/api/references/vscode-api#ViewColumn
    * @type {string}
    * @default 'next'
    * @memberof IResultsOptions
    */
-  location?: 'current' | 'next' | 'end' | number;
+  location?: 'none' | 'current' | 'next' | 'end' | number;
+
   /**
    * Customize results screen CSS
    *
@@ -510,7 +505,59 @@ export interface IResultsOptions {
     'font-family'?: string;
     'font-size'?: string;
     'table-cell-padding'?: string;
-   };
+  };
+}
+
+export interface ICSVExportOptions {
+  /**
+   * Field delimiter
+   * @type {string}
+   * @default ','
+   * @memberof ICSVExportOptions
+   */
+  delimiter?: string;
+  /**
+   * Include header line
+   * @type {boolean}
+   * @default true
+   * @memberof ICSVExportOptions
+   */
+  header?: boolean;
+  /**
+   * Quote characters
+   * @type {string}
+   * @default '"'
+   * @memberof ICSVExportOptions
+   */
+  quote?: string;
+  /**
+   * Quote all non-empty fields
+   * @type {boolean}
+   * @default false
+   * @memberof ICSVExportOptions
+   */
+  quoted?: boolean;
+  /**
+   * Quote empty fields
+   * @type {boolean}
+   * @default true
+   * @memberof ICSVExportOptions
+   */
+  quoted_empty?: boolean;
+  /**
+   * Quote all string fields
+   * @type {boolean}
+   * @default true
+   * @memberof ICSVExportOptions
+   */
+  quoted_string?: boolean;
+  /**
+   * Record delimiter or special value
+   * @type {string}
+   * @default 'unix'
+   * @memberof ICSVExportOptions
+   */
+  record_delimiter?: string;
 }
 
 export interface ISettings {
@@ -529,7 +576,7 @@ export interface ISettings {
    */
   autoConnectTo?: string | string[];
   /**
-   * Help SQLTools development.
+   * Deprecated. Use statusbar context menu option instead.
    * @type {boolean}
    * @default true
    * @memberof ISettings
@@ -541,7 +588,7 @@ export interface ISettings {
    * @default 100
    * @memberof ISettings
    */
-   historySize?: number;
+  historySize?: number;
   /**
    * Languages with SQL completion enabled.
    * @type {CompletionLanguages}
@@ -572,7 +619,7 @@ export interface ISettings {
    * @default true
    * @memberof ISettings
    */
-   highlightQuery?: boolean;
+  highlightQuery?: boolean;
   /**
    * Format document/selection options
    * @type {IFormatOptions}
@@ -621,12 +668,27 @@ export interface ISettings {
   defaultOpenType?: 'prompt' | 'csv' | 'json';
 
   /**
+   * CSV export format options
+   * @type {ICSVExportOptions}
+   * @memberof ISettings
+   */
+  csvExport?: ICSVExportOptions;
+
+  /**
    * Enable node runtime usage.
    * @default false
    * @type {null | boolean | string}
    * @memberof ISettings
    */
   useNodeRuntime?: null | boolean | string;
+
+    /**
+   * Disable node runtime detection notifications.
+   * @default false
+   * @type {boolean}
+   * @memberof ISettings
+   */
+    disableNodeDetectNotifications?: boolean;
 
   /**
    * Columns sort order
@@ -712,7 +774,7 @@ export type KeysOfSettings = (keyof ISettings);
 export interface ConfigChangeEvent {
   affectsConfig(section: KeysOfSettings, resource?: any): boolean;
   /**
-   * VSCode config
+   * VS Code config
    *
    * @param {string} section
    * @param {any} [resource]
@@ -756,7 +818,8 @@ export interface IExtension {
 
 export interface IDriverExtensionApi {
   /**
-   * Prepare connection settings that will be saved to settings file
+   * Prepare connection settings that will be saved to settings file,
+   * and/or resolve settings before passing them to the language server (e.g. call an AuthenticationProvider to retrieve credentials)
    *
    * @param {{ connInfo: IConnection }} arg
    * @returns {(Promise<IConnection> | IConnection)}
@@ -764,6 +827,7 @@ export interface IDriverExtensionApi {
    */
   parseBeforeSaveConnection?(arg: { connInfo: IConnection }): Promise<IConnection> | IConnection;
   parseBeforeEditConnection?(arg: { connInfo: IConnection }): Promise<IConnection> | IConnection;
+  resolveConnection?(arg: { connInfo: IConnection }): Promise<IConnection> | IConnection;
   readonly driverName?: string;
   readonly driverAliases: IDriverAlias[];
 }
@@ -802,7 +866,7 @@ export interface ILanguageClient {
   onNotification: LanguageClient['onNotification'];
 }
 
-export type LSContextMap =  Omit<Map<string, any>, 'clear' | 'delete'> & { drivers: Map<string, IConnectionDriverConstructor> };
+export type LSContextMap = Omit<Map<string, any>, 'clear' | 'delete'> & { drivers: Map<string, IConnectionDriverConstructor> };
 
 export interface ILanguageServer {
   listen(): void;

@@ -33,7 +33,7 @@ const DriverSelectorStepWidget = () => {
     );
   }, []);
 
-  if (step !== Step.CONNECTION_DRIVER_SELECTOR)  return null;
+  if (step !== Step.CONNECTION_DRIVER_SELECTOR) return null;
 
   return (
     <>
@@ -45,7 +45,9 @@ const DriverSelectorStepWidget = () => {
             {installedDrivers.map(driver => (
               <DriverItem
                 key={driver.value}
-                selected={selectedDriver && selectedDriver.value === driver.value}
+                selected={
+                  selectedDriver && selectedDriver.value === driver.value
+                }
                 driver={driver}
                 onSelect={() => onSelectDriver(driver)}
               />
@@ -65,14 +67,14 @@ const DriverSelectorStepWidget = () => {
           >
             <div>
               <Message>
-                Couldn't find any drivers installed yet.
+                Couldn't find any installed drivers.
                 <p>
                   <a
                     href={`command:workbench.extensions.search?${encodeURIComponent(
                       '"@tag:sqltools-driver"'
                     )}`}
                   >
-                    Search VSCode marketplace
+                    Search VS Code Marketplace
                   </a>
                 </p>
               </Message>
@@ -81,9 +83,9 @@ const DriverSelectorStepWidget = () => {
               <CircularProgress size='20px' />
               <p>
                 <strong>
-                  Don't worry, we are still looking up for installedDrivers.
+                  Don't worry, we are still looking for installed drivers.
                   <br />
-                  Try to install drivers before move forward.
+                  Try installing drivers before proceeding.
                 </strong>
               </p>
             </div>
